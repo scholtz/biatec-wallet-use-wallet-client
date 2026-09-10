@@ -1,0 +1,69 @@
+name: Release
+
+# Changesets-driven release pipeline.
+#
+# 1. A PR that changes the published package includes a changeset file (`pnpm changeset`).
+# 2. On push to `main`, this workflow either:
+#    a) opens/updates a "Version Packages" PR that applies all pending changesets
+#       (bumps package.json, writes CHANGELOG.md) — if there are pending changesets, or
+#    b) publishes to npm and creates a GitHub release — once that PR is merged (no changesets
+#       remain pending, because they were just consumed by step 2a).
+#
+# Auth: configure npm "trusted publishing" (OIDC) for this package on npmjs.com so no NPM_TOKEN
+# secret is needed and provenance is attached automatically (package.json already sets
+# publishConfig.provenance: true). If trusted publishing isn't set up yet, add an NPM_TOKEN repo
+# secret instead — the workflow falls back to it automatically.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: {}
+
+concurrency: ${{ github.workflow }}-${{ github.ref }}
+
+permissions:
+  contents: write
+  pull-requests: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm lint
+      - run: pnpm typecheck
+      - run: pnpm test
+
+      - name: Create Version PR or publish to npm
+        id: changesets
+        uses: changesets/action@v2
+        with:
+          version: pnpm changeset:version
+          publish: pnpm changeset:publish
+          commit: 'chore: version packages'
+          title: 'chore: version packages'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+          NPM_CONFIG_PROVENANCE: 'true'
+
+      - name: Create GitHub release
+        if: steps.changesets.outputs.published == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: biatec-wallet-use-wallet-client@${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
+          generate_release_notes: true

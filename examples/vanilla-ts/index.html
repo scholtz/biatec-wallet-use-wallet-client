@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Biatec Wallet × use-wallet example</title>
+    <meta name="description" content="Minimal use-wallet v5 dApp using the Biatec Wallet adapter" />
+    <style>
+      body {
+        font-family: system-ui, sans-serif;
+        max-width: 640px;
+        margin: 2rem auto;
+        padding: 0 1rem;
+      }
+      button {
+        padding: 0.5rem 1rem;
+        margin-right: 0.5rem;
+      }
+      pre {
+        background: #f3f3f3;
+        padding: 1rem;
+        overflow-x: auto;
+      }
+      dialog {
+        border: none;
+        border-radius: 12px;
+        padding: 1.5rem;
+        max-width: 320px;
+        width: 90%;
+        text-align: center;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+      dialog::backdrop {
+        background: rgba(0, 0, 0, 0.5);
+      }
+      dialog img {
+        width: 280px;
+        height: 280px;
+      }
+      dialog button {
+        display: block;
+        width: 100%;
+        margin: 0.5rem 0 0;
+      }
+    </style>
+  </head>
+  <body>
+    <h1>Biatec Wallet × use-wallet</h1>
+    <p>
+      <label
+        >Network
+        <select id="network"></select
+      ></label>
+    </p>
+    <p>
+      <button id="connect">Connect Biatec Wallet</button>
+      <button id="disconnect" hidden>Disconnect</button>
+    </p>
+    <p>
+      <button id="sign-txn" hidden>Sign 0 ALGO self-payment</button>
+      <button id="sign-data" hidden>Sign data (ARC-0060)</button>
+    </p>
+    <pre id="log"></pre>
+
+    <!--
+      Minimal WalletConnect pairing UI: just a QR code and a copy button — no wallet explorer,
+      no "get a wallet" links, nothing else. Shown instead of the default WalletConnect modal
+      because biatec() below is configured with onDisplayUri. See src/main.ts.
+    -->
+    <dialog id="wc-dialog">
+      <h2 style="margin: 0 0 0.75rem; font-size: 1.1rem">Scan with Biatec Wallet</h2>
+      <img id="wc-qr" alt="WalletConnect pairing QR code" />
+      <button id="wc-copy" type="button">Copy connection string</button>
+      <button id="wc-cancel" type="button">Cancel</button>
+    </dialog>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

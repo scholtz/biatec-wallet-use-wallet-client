@@ -1,0 +1,267 @@
+# biatec-wallet-use-wallet-client
+
+[![CI](https://github.com/scholtz/biatec-wallet-use-wallet-client/actions/workflows/ci.yml/badge.svg)](https://github.com/scholtz/biatec-wallet-use-wallet-client/actions/workflows/ci.yml)
+[![npm version](https://img.shields.io/npm/v/biatec-wallet-use-wallet-client)](https://www.npmjs.com/package/biatec-wallet-use-wallet-client)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
+[Biatec Wallet](https://wallet.biatec.io) adapter for [`@txnlab/use-wallet`](https://github.com/TxnLab/use-wallet) v5.
+
+Connects your Algorand / AVM dApp to Biatec Wallet over **WalletConnect v2**, with
+
+- ARC-0001 transaction signing (`algo_signTxn`), including transaction groups where only some
+  transactions belong to the connected accounts,
+- ARC-0060 arbitrary data signing (`algo_signData`) — `wallet.signData()` / `canSignData` work out of the box,
+- multi-chain sessions: Algorand mainnet, testnet, betanet, fnet, Voi mainnet and Aramid mainnet
+  are all approved in one session, so `setActiveNetwork()` does not require a reconnect,
+- the WalletConnect modal **or** your own QR / deep-link UI through `onDisplayUri`.
+
+Works with every use-wallet framework binding: `@txnlab/use-wallet-react`, `-vue`, `-solid`, `-svelte`
+and the vanilla `WalletManager`.
+
+## Install
+
+```bash
+pnpm add biatec-wallet-use-wallet-client @txnlab/use-wallet algosdk
+```
+
+`@txnlab/use-wallet` (`^5`) and `algosdk` (`^3`) are peer dependencies. The WalletConnect SDKs are
+bundled as regular dependencies and loaded lazily on first `connect()`.
+
+You need a WalletConnect Cloud **project id** from <https://cloud.reown.com>.
+
+## Usage
+
+### Vanilla / any framework
+
+```ts
+import { WalletManager } from '@txnlab/use-wallet'
+import { biatec } from 'biatec-wallet-use-wallet-client'
+
+const manager = new WalletManager({
+  wallets: [
+    biatec({
+      projectId: '<your-walletconnect-project-id>',
+      // Optional dApp metadata shown inside Biatec Wallet (auto-detected from the page otherwise)
+      metadata: {
+        name: 'My dApp',
+        description: 'Example dApp',
+        url: 'https://my-dapp.example',
+        icons: ['https://my-dapp.example/icon.png']
+      }
+    })
+  ],
+  defaultNetwork: 'mainnet'
+})
+
+await manager.resumeSessions()
+
+const wallet = manager.getWallet('biatec')!
+await wallet.connect()
+
+// Sign a transaction (ARC-0001)
+const signed = await wallet.signTransactions([txn])
+
+// Sign arbitrary data (ARC-0060)
+const { signature } = await wallet.signData(btoa('hello'), { scope: 1, encoding: 'base64' })
+```
+
+### React
+
+```tsx
+import { WalletProvider, WalletManager, useWallet } from '@txnlab/use-wallet-react'
+import { biatec } from 'biatec-wallet-use-wallet-client'
+
+const manager = new WalletManager({
+  wallets: [biatec({ projectId: import.meta.env.VITE_WC_PROJECT_ID })]
+})
+
+export function App() {
+  return (
+    <WalletProvider manager={manager}>
+      <Connect />
+    </WalletProvider>
+  )
+}
+
+function Connect() {
+  const { wallets, activeAddress } = useWallet()
+  const wallet = wallets.find((w) => w.id === 'biatec')!
+  return activeAddress ? (
+    <button onClick={() => wallet.disconnect()}>Disconnect {activeAddress}</button>
+  ) : (
+    <button onClick={() => wallet.connect()}>
+      <img src={wallet.metadata.icon} width={24} /> {wallet.metadata.name}
+    </button>
+  )
+}
+```
+
+### Vue
+
+```ts
+import { createApp } from 'vue'
+import { WalletManagerPlugin } from '@txnlab/use-wallet-vue'
+import { biatec } from 'biatec-wallet-use-wallet-client'
+
+createApp(App)
+  .use(WalletManagerPlugin, {
+    wallets: [biatec({ projectId: import.meta.env.VITE_WC_PROJECT_ID })]
+  })
+  .mount('#app')
+```
+
+### Alongside other wallets
+
+```ts
+import { pera } from '@txnlab/use-wallet-pera'
+import { defly } from '@txnlab/use-wallet-defly'
+import { biatec } from 'biatec-wallet-use-wallet-client'
+
+new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
+```
+
+## Options
+
+`biatec(options)` accepts:
+
+| Option                                                                                                                   | Type                                     | Default                         | Description                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------- | ------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`                                                                                                              | `string`                                 | **required**                    | WalletConnect Cloud project id.                                                                                                                      |
+| `relayUrl`                                                                                                               | `string`                                 | `wss://relay.walletconnect.com` | WalletConnect relay.                                                                                                                                 |
+| `metadata`                                                                                                               | `SignClientTypes.Metadata`               | detected from the document      | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet.                                                                    |
+| `onDisplayUri`                                                                                                           | `(uri: string) => void \| Promise<void>` | –                               | Receive the pairing URI and render your own QR / link. When set, the WalletConnect modal is not used. `connect()` resolves once the wallet approves. |
+| `enableSignData`                                                                                                         | `boolean`                                | `true`                          | Request `algo_signData` in the session and expose `signData()`. Set `false` to advertise transaction signing only.                                   |
+| `chains`                                                                                                                 | `string[]`                               | `[]`                            | Extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).                          |
+| `displayMetadata`                                                                                                        | `Partial<{ name; icon }>`                | Biatec name + logo              | Override how the wallet appears in your wallet picker.                                                                                               |
+| `themeMode`, `themeVariables`, `enableExplorer`, `explorerRecommendedWalletIds`, `privacyPolicyUrl`, `termsOfServiceUrl` | see `@walletconnect/modal`               | –                               | Passed to the WalletConnect modal.                                                                                                                   |
+
+### Custom QR code instead of the WalletConnect modal
+
+The default WalletConnect modal shows a wallet explorer, "copy link", and other wallets — often
+more than a dApp that only supports Biatec Wallet needs. Pass `onDisplayUri` to receive the raw
+pairing string yourself and render **just** a QR code and a copy button:
+
+```ts
+biatec({
+  projectId,
+  onDisplayUri: (uri) => showMyQrDialog(uri) // hide it once connect() resolves or rejects
+})
+```
+
+Both examples in [examples/](examples) implement exactly this — a small dialog with a QR code
+(via the [`qrcode`](https://www.npmjs.com/package/qrcode) package) and a "Copy connection string"
+button, no wallet list:
+[`examples/react-ts/src/ConnectQrDialog.tsx`](examples/react-ts/src/ConnectQrDialog.tsx) and
+[`examples/vanilla-ts/src/main.ts`](examples/vanilla-ts/src/main.ts) (using the native
+`<dialog>` element). Copy either one as a starting point.
+
+### Extra networks (Voi, Aramid)
+
+use-wallet ships Algorand mainnet/testnet/betanet/fnet/localnet. Biatec Wallet also supports Voi
+mainnet and Aramid mainnet; ready-made configs are exported:
+
+```ts
+import { NetworkConfigBuilder, WalletManager } from '@txnlab/use-wallet'
+import { biatec, BIATEC_EXTRA_NETWORKS } from 'biatec-wallet-use-wallet-client'
+
+const networks = new NetworkConfigBuilder()
+  .addNetwork('voimain', BIATEC_EXTRA_NETWORKS.voimain)
+  .addNetwork('aramidmain', BIATEC_EXTRA_NETWORKS.aramidmain)
+  .build()
+
+const manager = new WalletManager({ wallets: [biatec({ projectId })], networks })
+await manager.setActiveNetwork('voimain') // no reconnect needed
+```
+
+Every network in the manager that has a `caipChainId` is requested as an optional chain when
+connecting. For your own AVM network use `caipChainIdFromGenesisHash(genesisHashBase64)`.
+
+## ARC-0060 data signing
+
+`signData(data, metadata)` follows the use-wallet contract: `data` is a base64 string,
+`metadata` is `{ scope: ScopeType.AUTH, encoding: 'base64' }`. The adapter builds the
+`StdSignData` payload (signer public key, `domain = location.host`, `authenticatorData =
+SHA-256(domain)`) and sends it to Biatec Wallet, which verifies the domain against the
+WalletConnect session peer before signing. Errors use ARC-0060 codes:
+
+| Code   | Meaning                                                                |
+| ------ | ---------------------------------------------------------------------- |
+| `4001` | User rejected / wallet returned no signature                           |
+| `4200` | `signData` disabled, or the session does not advertise `algo_signData` |
+| `4300` | Any other failure (relay, encoding, …)                                 |
+
+## How this relates to `walletConnect({ skin: 'biatec' })`
+
+`@txnlab/use-wallet-walletconnect` ships a _skin_ that only changes the name and icon of the
+generic WalletConnect adapter. This package is a full adapter with a stable wallet id (`biatec`),
+ARC-0060 support, multi-chain sessions and a custom-QR hook. Both can coexist in one
+`WalletManager` because they use different wallet keys (`biatec` vs `walletconnect:biatec`).
+
+## Documentation
+
+| Doc                                                | What's in it                                                                                   |
+| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Full walkthrough — React/Vue/Solid/Svelte/vanilla, networks, custom QR UI, ARC-0060.           |
+| [docs/API.md](docs/API.md)                         | Every export: `biatec()` options, `BiatecWalletAdapter` members, error codes, network helpers. |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)       | Internal design — session lifecycle, multi-chain negotiation, signing flows, sequence diagram. |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Fixes for the errors and dead-ends you're most likely to hit.                                  |
+| [docs/RELEASING.md](docs/RELEASING.md)             | How the automated Changesets release pipeline works.                                           |
+| [docs/RESEARCH.md](docs/RESEARCH.md)               | Original research: how use-wallet v5 adapters work, what Biatec Wallet supports, sources.      |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                 | Contributor workflow, code style, testing, release checklist.                                  |
+
+## Integrating with an AI coding agent
+
+[`skill/biatec-wallet-integration/SKILL.md`](skill/biatec-wallet-integration/SKILL.md) is a
+self-contained, step-by-step playbook written for AI coding agents (Claude Code, Cursor, Copilot,
+etc.) to follow when adding Biatec Wallet to **your** dApp — framework detection, installation,
+`WalletManager` setup per framework, transaction/data signing, and a troubleshooting table. It
+ships inside the published npm package, so once installed you can point your agent straight at it:
+
+```bash
+pnpm add biatec-wallet-use-wallet-client
+```
+
+```
+Read node_modules/biatec-wallet-use-wallet-client/skill/biatec-wallet-integration/SKILL.md
+and follow it to add Biatec Wallet support to this app.
+```
+
+For Claude Code specifically, copy it into your project so it's auto-discovered as a skill:
+
+```bash
+mkdir -p .claude/skills/biatec-wallet-integration
+cp node_modules/biatec-wallet-use-wallet-client/skill/biatec-wallet-integration/SKILL.md \
+   .claude/skills/biatec-wallet-integration/SKILL.md
+```
+
+Then ask Claude Code to "add Biatec Wallet support" — the skill is picked up automatically.
+
+## Development
+
+```bash
+pnpm install
+pnpm test        # vitest
+pnpm typecheck   # tsc
+pnpm lint        # eslint
+pnpm build       # tsdown -> dist/
+pnpm check       # everything, also run by prepublishOnly
+```
+
+Run an example dApp: see [examples/](examples) for a vanilla TypeScript and a React integration
+(`cd examples/react-ts && cp .env.example .env && pnpm install && pnpm dev`).
+
+Full contributor workflow, code style, and testing conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
+
+### CI/CD
+
+- **CI** (`.github/workflows/ci.yml`) — on every push/PR: lint, typecheck, test, build, publint,
+  format check, and building both examples against the freshly built package.
+- **Release** (`.github/workflows/release.yml`) — [Changesets](https://github.com/changesets/changesets)-driven:
+  merging a PR with a changeset opens an automatic "Version Packages" PR; merging _that_ publishes
+  to npm with provenance and creates a GitHub release. No manual version bumps or `npm publish`.
+  Full details: [docs/RELEASING.md](docs/RELEASING.md).
+
+## License
+
+MIT. The WalletConnect transaction-signing flow is adapted from
+[`@txnlab/use-wallet-walletconnect`](https://github.com/TxnLab/use-wallet) (MIT, TxnLab, Inc.).

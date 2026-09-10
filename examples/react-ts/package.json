@@ -1,0 +1,27 @@
+{
+  "name": "example-react-ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@txnlab/use-wallet": "^5.0.0",
+    "@txnlab/use-wallet-react": "^5.0.0",
+    "algosdk": "^3.7.0",
+    "biatec-wallet-use-wallet-client": "workspace:*",
+    "react": "^19.3.0",
+    "react-dom": "^19.3.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "5.9.3",
+    "vite": "^8.2.2",
+    "@types/qrcode": "^1.5.6"
+  }
+}

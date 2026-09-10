@@ -1,0 +1,92 @@
+{
+  "name": "biatec-wallet-use-wallet-client",
+  "version": "0.1.0",
+  "description": "Biatec Wallet adapter for @txnlab/use-wallet v5 — WalletConnect v2 transport with ARC-0001 transaction signing and ARC-0060 data signing",
+  "author": "Scholtz & Co (Biatec)",
+  "license": "MIT",
+  "homepage": "https://github.com/scholtz/biatec-wallet-use-wallet-client#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/scholtz/biatec-wallet-use-wallet-client.git"
+  },
+  "bugs": {
+    "url": "https://github.com/scholtz/biatec-wallet-use-wallet-client/issues"
+  },
+  "keywords": [
+    "algorand",
+    "avm",
+    "voi",
+    "aramid",
+    "wallet",
+    "biatec",
+    "use-wallet",
+    "txnlab",
+    "walletconnect",
+    "arc60",
+    "ai-agent",
+    "claude-code"
+  ],
+  "engines": {
+    "node": ">=20.19"
+  },
+  "packageManager": "pnpm@11.5.2",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  },
+  "type": "module",
+  "sideEffects": false,
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": [
+    "dist",
+    "skill"
+  ],
+  "scripts": {
+    "build": "tsdown",
+    "dev": "tsdown --watch",
+    "test": "vitest run",
+    "test:watch": "vitest --watch",
+    "lint": "eslint \"src/**/*.ts\"",
+    "typecheck": "tsc --noEmit",
+    "format:check": "prettier --check .",
+    "format:fix": "prettier --write .",
+    "publint": "publint",
+    "check": "pnpm lint && pnpm typecheck && pnpm test && pnpm build && pnpm publint",
+    "prepublishOnly": "pnpm check",
+    "changeset": "changeset",
+    "changeset:version": "changeset version",
+    "changeset:publish": "pnpm build && changeset publish"
+  },
+  "peerDependencies": {
+    "@txnlab/use-wallet": "^5.0.0",
+    "algosdk": "^3.0.0"
+  },
+  "dependencies": {
+    "@walletconnect/modal": "2.7.0",
+    "@walletconnect/sign-client": "2.24.0",
+    "@walletconnect/types": "2.24.0"
+  },
+  "devDependencies": {
+    "@changesets/changelog-github": "1.0.1",
+    "@changesets/cli": "3.0.2",
+    "@eslint/js": "^9.28.0",
+    "@txnlab/use-wallet": "5.0.0",
+    "@types/node": "22.20.2",
+    "algosdk": "3.7.0",
+    "eslint": "^9.28.0",
+    "eslint-config-prettier": "^10.1.8",
+    "prettier": "3.8.1",
+    "publint": "^0.3.18",
+    "tsdown": "0.21.0",
+    "typescript": "5.9.3",
+    "typescript-eslint": "^8.33.1",
+    "vitest": "3.2.4"
+  }
+}

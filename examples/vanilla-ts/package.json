@@ -1,0 +1,21 @@
+{
+  "name": "example-vanilla-ts",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@txnlab/use-wallet": "^5.0.0",
+    "algosdk": "^3.7.0",
+    "biatec-wallet-use-wallet-client": "workspace:*",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "vite": "^6.4.1",
+    "@types/qrcode": "^1.5.6"
+  }
+}
