@@ -1,6 +1,8 @@
 import type { WalletAdapterConfig, WalletMetadata } from '@txnlab/use-wallet/adapter'
 import { BiatecWalletAdapter, WALLET_ID } from './adapter'
 import type { BiatecWalletOptions } from './adapter'
+import { BiatecLiquidAdapter, WALLET_ID_LIQUID } from './liquid/adapter'
+import type { BiatecLiquidOptions } from './liquid/adapter'
 
 export interface BiatecFactoryOptions extends BiatecWalletOptions {
   /**
@@ -60,3 +62,69 @@ export {
   caipChainIdFromGenesisHash
 } from './networks'
 export type { BiatecNetworkId } from './networks'
+
+// ---------- Liquid Auth transport ----------------------------------- //
+
+export interface BiatecLiquidFactoryOptions extends BiatecLiquidOptions {
+  /** Override the wallet's display name / icon shown by your dApp's wallet picker. */
+  displayMetadata?: Partial<WalletMetadata>
+}
+
+/**
+ * Factory for the Biatec Wallet **Liquid Auth** adapter (passkey-linked WebRTC transport).
+ * Can be registered alongside `biatec()` — they use different wallet ids.
+ *
+ * @example
+ * ```ts
+ * new WalletManager({ wallets: [biatecLiquid({ onDisplayUri: (uri) => showQr(uri) })] })
+ * ```
+ */
+export function biatecLiquid(options: BiatecLiquidFactoryOptions = {}): WalletAdapterConfig {
+  const { displayMetadata, ...adapterOptions } = options
+  return {
+    id: WALLET_ID_LIQUID,
+    metadata: { ...BiatecLiquidAdapter.defaultMetadata, ...displayMetadata },
+    Adapter: BiatecLiquidAdapter as unknown as WalletAdapterConfig['Adapter'],
+    options: adapterOptions as unknown as Record<string, unknown>
+  }
+}
+
+export { BiatecLiquidAdapter, WALLET_ID_LIQUID } from './liquid/adapter'
+export type { BiatecLiquidOptions, LiquidAccountMetadata } from './liquid/adapter'
+export { LiquidSignalClient, LiquidSignalError } from './liquid/signaling'
+export type { LinkMessage, LiquidPeerSession } from './liquid/signaling'
+export {
+  DEFAULT_ICE_SERVERS,
+  DEFAULT_LIQUID_ORIGIN,
+  LIQUID_DATA_CHANNEL,
+  LIQUID_SCHEME,
+  LiquidErrorCode,
+  LiquidProviderError,
+  LiquidReference,
+  buildErrorResponse,
+  buildRequest,
+  buildResponse,
+  decodeLiquidMessage,
+  encodeLiquidMessage,
+  fromBase64Url,
+  generateLiquidDeepLink,
+  isLiquidResponse,
+  parseLiquidDeepLink,
+  toBase64Url
+} from './liquid/protocol'
+export type {
+  HelloParams,
+  HelloResult,
+  LiquidDeepLink,
+  LiquidErrorPayload,
+  LiquidMessage,
+  LiquidPeerMetadata,
+  LiquidRequestMessage,
+  LiquidResponseMessage,
+  LiquidStdSigData,
+  LiquidWalletTransaction,
+  SignDataParams,
+  SignDataResult,
+  SignTransactionsParams,
+  SignTransactionsResult
+} from './liquid/protocol'

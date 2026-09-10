@@ -35,7 +35,11 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
 ## Layout
 
 - `src/adapter.ts` — `BiatecWalletAdapter`: session lifecycle, `signTransactions`, `signData`.
-- `src/index.ts` — `biatec()` factory + public exports.
+- `src/index.ts` — `biatec()` / `biatecLiquid()` factories + public exports.
+- `src/liquid/` — Liquid Auth transport: `protocol.ts` (ARC-0027 CBOR envelope + ARC-0060 extension,
+  deep links, base64url — mirrored in the wallet repo at `src/scripts/liquid/protocol.ts`, keep in
+  sync), `signaling.ts` (socket.io + WebRTC answer role), `adapter.ts` (`BiatecLiquidAdapter`),
+  `dialog.ts` (fallback copy-link dialog). Spec: `docs/LIQUID_AUTH_PROTOCOL.md`.
 - `src/networks.ts` — CAIP-2 ids and extra `NetworkConfig`s (Voi, Aramid).
 - `src/window-metadata.ts` — dApp metadata auto-detection from the document.
 - `src/icon.ts` — Biatec logo as SVG / data URI.
@@ -47,6 +51,7 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
   - `TROUBLESHOOTING.md` — known failure modes and fixes.
   - `RELEASING.md` — the Changesets-based release pipeline.
   - `RESEARCH.md` — original research notes on use-wallet v5 and Biatec Wallet internals, sources.
+  - `LIQUID_AUTH_PROTOCOL.md` — normative description of the Liquid Auth transport and message schemas.
 - `skill/biatec-wallet-integration/SKILL.md` — portable AI-agent instructions for integrating this
   package into a **consumer's** dApp. Shipped inside the published npm package (see `files` in
   `package.json`). Mirrored at `.claude/skills/biatec-wallet-integration/SKILL.md` for this repo's

@@ -13,7 +13,9 @@ Connects your Algorand / AVM dApp to Biatec Wallet over **WalletConnect v2**, wi
 - ARC-0060 arbitrary data signing (`algo_signData`) — `wallet.signData()` / `canSignData` work out of the box,
 - multi-chain sessions: Algorand mainnet, testnet, betanet, fnet, Voi mainnet and Aramid mainnet
   are all approved in one session, so `setActiveNetwork()` does not require a reconnect,
-- the WalletConnect modal **or** your own QR / deep-link UI through `onDisplayUri`.
+- the WalletConnect modal **or** your own QR / deep-link UI through `onDisplayUri`,
+- an alternative **Liquid Auth** transport (`biatecLiquid()`): passkey-linked, peer-to-peer WebRTC with
+  no relay in the signing path.
 
 Works with every use-wallet framework binding: `@txnlab/use-wallet-react`, `-vue`, `-solid`, `-svelte`
 and the vanilla `WalletManager`.
@@ -197,17 +199,48 @@ generic WalletConnect adapter. This package is a full adapter with a stable wall
 ARC-0060 support, multi-chain sessions and a custom-QR hook. Both can coexist in one
 `WalletManager` because they use different wallet keys (`biatec` vs `walletconnect:biatec`).
 
+## Liquid Auth transport (passkeys + WebRTC)
+
+Besides WalletConnect, this package implements the Algorand Foundation's
+[Liquid Auth](https://liquidauth.com) protocol as a second transport: the wallet is linked with a
+**passkey** at a Liquid Auth service and then talks to your dApp over a **direct, encrypted WebRTC
+data channel** (ICE via public Google STUN servers), so no relay ever sees a transaction.
+Messages follow ARC-0027 (`arc0027:sign_transactions`) with an ARC-0060 `arc0060:sign_data`
+extension, and interoperate with other Liquid Auth peers for transaction signing.
+
+```ts
+import { biatec, biatecLiquid } from 'biatec-wallet-use-wallet-client'
+
+new WalletManager({
+  wallets: [
+    biatec({ projectId }), // WalletConnect
+    biatecLiquid({
+      // origin: 'https://liquid.biatec.io',   // Biatec-hosted Liquid Auth service (default)
+      onDisplayUri: (uri) => showMyQrDialog(uri) // liquid://… link the wallet scans
+    })
+  ]
+})
+```
+
+Both entries can be registered at once (ids `biatec` and `biatec-liquid`). `signTransactions()`
+and `signData()` behave exactly as with WalletConnect. See
+[docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) for the full protocol, the
+`biatecLiquid()` options in [docs/API.md](docs/API.md#biatecliquidoptions), and the service
+deployment requirements (the service must be hosted under the wallet's domain because of the
+WebAuthn RP-ID rule).
+
 ## Documentation
 
-| Doc                                                | What's in it                                                                                   |
-| -------------------------------------------------- | ---------------------------------------------------------------------------------------------- |
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md) | Full walkthrough — React/Vue/Solid/Svelte/vanilla, networks, custom QR UI, ARC-0060.           |
-| [docs/API.md](docs/API.md)                         | Every export: `biatec()` options, `BiatecWalletAdapter` members, error codes, network helpers. |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)       | Internal design — session lifecycle, multi-chain negotiation, signing flows, sequence diagram. |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md) | Fixes for the errors and dead-ends you're most likely to hit.                                  |
-| [docs/RELEASING.md](docs/RELEASING.md)             | How the automated Changesets release pipeline works.                                           |
-| [docs/RESEARCH.md](docs/RESEARCH.md)               | Original research: how use-wallet v5 adapters work, what Biatec Wallet supports, sources.      |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                 | Contributor workflow, code style, testing, release checklist.                                  |
+| Doc                                                          | What's in it                                                                                                   |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)           | Full walkthrough — React/Vue/Solid/Svelte/vanilla, networks, custom QR UI, ARC-0060.                           |
+| [docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) | The Liquid Auth transport: linking, signaling, ARC-0027/ARC-0060 messages, security model, service deployment. |
+| [docs/API.md](docs/API.md)                                   | Every export: `biatec()` options, `BiatecWalletAdapter` members, error codes, network helpers.                 |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                 | Internal design — session lifecycle, multi-chain negotiation, signing flows, sequence diagram.                 |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)           | Fixes for the errors and dead-ends you're most likely to hit.                                                  |
+| [docs/RELEASING.md](docs/RELEASING.md)                       | How the automated Changesets release pipeline works.                                                           |
+| [docs/RESEARCH.md](docs/RESEARCH.md)                         | Original research: how use-wallet v5 adapters work, what Biatec Wallet supports, sources.                      |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor workflow, code style, testing, release checklist.                                                  |
 
 ## Integrating with an AI coding agent
 

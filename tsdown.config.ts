@@ -15,7 +15,9 @@ export default defineConfig({
       '@txnlab/use-wallet/adapter',
       '@walletconnect/modal',
       '@walletconnect/sign-client',
-      '@walletconnect/types'
+      '@walletconnect/types',
+      'socket.io-client',
+      'cbor-x'
     ]
   }
 })

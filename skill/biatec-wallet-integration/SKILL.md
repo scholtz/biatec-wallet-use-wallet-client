@@ -256,6 +256,28 @@ Reference implementation to copy from rather than reinvent:
   [`examples/vanilla-ts/src/main.ts`](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/examples/vanilla-ts/src/main.ts)
   (vanilla, using the native `<dialog>` element, no bridge needed).
 
+## 5b. Optional: Liquid Auth transport (no WalletConnect relay)
+
+`biatecLiquid()` is a second adapter in the same package that pairs Biatec Wallet through the
+Algorand Foundation's Liquid Auth protocol: a passkey-authenticated link, then a direct
+encrypted WebRTC data channel (public Google STUN servers). Use it when the user asks for
+Liquid Auth, for a relay-free/peer-to-peer connection, or has no WalletConnect project id.
+It can be registered **alongside** `biatec()` (different wallet ids: `biatec` / `biatec-liquid`).
+
+```ts
+import { biatecLiquid } from 'biatec-wallet-use-wallet-client'
+
+biatecLiquid({
+  // origin: 'https://liquid.biatec.io',      // default; only change for a self-hosted service
+  onDisplayUri: (uri) => showQrDialog(uri) // same QR dialog as Step 5 — the URI is liquid://…
+})
+```
+
+Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical. Do not try
+to host a Liquid Auth service for the dApp: with the web wallet the service must live under the
+wallet's own domain, which the default `origin` already does. Details:
+`docs/LIQUID_AUTH_PROTOCOL.md` in the package repo.
+
 ## 6. Optional: register Voi mainnet / Aramid mainnet
 
 `@txnlab/use-wallet` ships Algorand mainnet/testnet/betanet/fnet/localnet by default. Biatec Wallet

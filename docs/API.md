@@ -6,7 +6,9 @@ Everything importable from `biatec-wallet-use-wallet-client`. For a narrative wa
 ```ts
 import {
   biatec,
+  biatecLiquid,
   BiatecWalletAdapter,
+  BiatecLiquidAdapter,
   BiatecFactoryOptions,
   BiatecWalletOptions,
   ModalOptions,
@@ -132,6 +134,57 @@ signData(data: string, metadata: StdSignMetadata): Promise<StdSignDataResponse>
   | `4300` | Any other failure — relay error, malformed response, etc.                                                                             |
 
   Throws `SessionError` if called before a session exists.
+
+## `biatecLiquid(options?)`
+
+```ts
+function biatecLiquid(options?: BiatecLiquidFactoryOptions): WalletAdapterConfig
+```
+
+Factory for the **Liquid Auth** transport (wallet id `biatec-liquid`, display name
+"Biatec Wallet (Liquid Auth)"). Registers `BiatecLiquidAdapter`. Can be used next to `biatec()`.
+Protocol details: [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).
+
+### `BiatecLiquidOptions`
+
+| Field                            | Type                                                                  | Default                                                  | Notes                                                                                                            |
+| -------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `origin`                         | `string`                                                              | `'https://liquid.biatec.io'`                             | Liquid Auth service the wallet authenticates against. Must be hosted under the wallet's domain (WebAuthn RP ID). |
+| `iceServers`                     | `RTCIceServer[]`                                                      | public Google STUN (`stun.l.google.com:19302` … `stun4`) | ICE servers for the WebRTC connection. Add a TURN server for restrictive NATs.                                   |
+| `onDisplayUri`                   | `(uri: string, info: { requestId; origin }) => void \| Promise<void>` | built-in copy-link dialog                                | Receive the `liquid://<host>/?requestId=…` link to render a QR code.                                             |
+| `metadata`                       | `Partial<{ name; description; url; icons }>`                          | detected from the document                               | dApp metadata sent in the `biatec:hello` handshake and shown by the wallet.                                      |
+| `providerId`                     | `string`                                                              | random UUID                                              | ARC-0027 `providerId` carried in every message.                                                                  |
+| `enableSignData`                 | `boolean`                                                             | `true`                                                   | Expose `signData()` (ARC-0060 over `arc0060:sign_data`).                                                         |
+| `connectTimeoutMs`               | `number`                                                              | `300000`                                                 | How long `connect()` waits for the wallet to pair.                                                               |
+| `reconnectTimeoutMs`             | `number`                                                              | `30000`                                                  | How long a lazy reconnect (after a reload) waits for the wallet before failing with `4002`.                      |
+| `requestTimeoutMs`               | `number`                                                              | `300000`                                                 | How long a signing request waits for the user's answer.                                                          |
+| `displayMetadata` (factory only) | `Partial<{ name; icon }>`                                             | Biatec name + logo                                       | Wallet-picker appearance.                                                                                        |
+
+### `BiatecLiquidAdapter`
+
+Same `BaseWallet` surface as `BiatecWalletAdapter` (`connect`, `disconnect`, `resumeSession`,
+`signTransactions`, `transactionSigner`, `signData`, `canSignData`, …) plus:
+
+| Member          | Type                         | Description                                                                                                                                              |
+| --------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `walletInfo`    | `get(): HelloResult \| null` | What the wallet announced in the hello handshake (address, name, version, methods).                                                                      |
+| `isChannelOpen` | `get(): boolean`             | Whether the WebRTC data channel is currently open. `isConnected` can be `true` while this is `false` after a reload — the first request re-pairs lazily. |
+
+Accounts carry `metadata: { requestId, origin }` (`LiquidAccountMetadata`) so the pairing can be
+resumed. Errors from the wallet surface as `LiquidProviderError` (`code` = ARC-0027 code:
+`4001` rejected, `4002` timed out, `4003` unsupported, `4200` invalid input); `signData()` maps
+them to `SignDataError` like the WalletConnect adapter.
+
+### Protocol helpers
+
+Everything in `src/liquid/protocol.ts` is exported for custom integrations and for keeping the
+wallet in sync: `generateLiquidDeepLink`, `parseLiquidDeepLink`, `encodeLiquidMessage`,
+`decodeLiquidMessage`, `buildRequest`, `buildResponse`, `buildErrorResponse`,
+`isLiquidResponse`, `toBase64Url`, `fromBase64Url`, the `LiquidReference` / `LiquidErrorCode`
+maps, `DEFAULT_LIQUID_ORIGIN`, `DEFAULT_ICE_SERVERS`, `LIQUID_DATA_CHANNEL`, `LIQUID_SCHEME`,
+`LiquidProviderError`, and the message types (`SignTransactionsParams/Result`,
+`SignDataParams/Result`, `HelloParams/Result`, `LiquidStdSigData`, …). `LiquidSignalClient`
+(the answer-role signaling client) is exported too.
 
 ## Constants
 
