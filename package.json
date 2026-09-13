@@ -29,7 +29,7 @@
   "engines": {
     "node": ">=20.19"
   },
-  "packageManager": "pnpm@11.5.2",
+  "packageManager": "pnpm@12.4.1",
   "publishConfig": {
     "access": "public",
     "provenance": true
