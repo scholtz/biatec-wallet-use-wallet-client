@@ -61,9 +61,17 @@ jobs:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           NPM_CONFIG_PROVENANCE: 'true'
 
+      - name: Read published version
+        # changesets/action's `publishedPackages` output isn't reliably populated on every code
+        # path (e.g. the "no pending changesets, publish directly" path) — read the version we
+        # just published straight from package.json instead of parsing that output as JSON.
+        if: steps.changesets.outputs.published == 'true'
+        id: pkg
+        run: echo "version=$(node -p "require('./package.json').version")" >> "$GITHUB_OUTPUT"
+
       - name: Create GitHub release
         if: steps.changesets.outputs.published == 'true'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: biatec-wallet-use-wallet-client@${{ fromJson(steps.changesets.outputs.publishedPackages)[0].version }}
+          tag_name: biatec-wallet-use-wallet-client@${{ steps.pkg.outputs.version }}
           generate_release_notes: true
