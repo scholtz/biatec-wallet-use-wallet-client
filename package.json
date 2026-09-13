@@ -1,6 +1,6 @@
 {
   "name": "biatec-wallet-use-wallet-client",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Biatec Wallet adapter for @txnlab/use-wallet v5 — WalletConnect v2 transport with ARC-0001 transaction signing and ARC-0060 data signing",
   "author": "Scholtz & Co (Biatec)",
   "license": "MIT",
