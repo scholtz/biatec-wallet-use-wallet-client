@@ -114,6 +114,11 @@ resolution logic the dialog uses — an explicit tag or list of tags, falling ba
 browser's language) are exported if you want to build a language switcher of your own that stays
 in sync, e.g. to label it with each language's native name.
 
+The dialog itself always shows its own language switcher — small circular flags (one per
+supported locale, from [circle-flags](https://github.com/HatScripts/circle-flags), MIT) below
+the method selector. Clicking one re-renders the dialog's text in place without closing it or
+losing any in-progress connection state.
+
 ### `BiatecDisplayUriInfo`
 
 ```ts

@@ -11,7 +11,9 @@
  */
 import { icon } from './icon'
 import { BIATEC_WALLET_URL } from './adapter-constants'
-import { resolveLocale, TRANSLATIONS, formatMethod } from './i18n'
+import { resolveLocale, SUPPORTED_LOCALES, TRANSLATIONS, formatMethod } from './i18n'
+import type { BiatecLocale } from './i18n'
+import { LOCALE_FLAG, LOCALE_NAME } from './flags'
 import type { BiatecMethod, DialogHandle } from './transports/types'
 
 const STYLE_ID = 'biatec-connect-dialog-styles'
@@ -78,7 +80,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   injectStylesOnce()
 
   const { methods, showContent } = options
-  const i18n = TRANSLATIONS[resolveLocale(options.locale)]
+  let locale = resolveLocale(options.locale)
+  let i18n = TRANSLATIONS[locale]
   const showPicker = methods.length > 1
   let selected = options.defaultMethod
   const states = new Map<BiatecMethod, ConnectMethodState>()
@@ -146,18 +149,52 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
       </div>
     </div>
     <div class="bcd-body">
-      ${showPicker ? '<div class="bcd-methods" role="tablist"></div>' : ''}
+      <div class="bcd-sidebar">
+        ${showPicker ? '<div class="bcd-methods" role="tablist"></div>' : ''}
+        <div class="bcd-locales" role="group" aria-label="Language"></div>
+      </div>
       ${showContent ? '<div class="bcd-content"></div>' : ''}
     </div>
   `
-  ;(panel.querySelector('.bcd-close') as HTMLButtonElement).onclick = cancel
+  const closeButton = panel.querySelector('.bcd-close') as HTMLButtonElement
+  const titleEl = panel.querySelector('.bcd-title') as HTMLHeadingElement
+  const subtitleEl = panel.querySelector('.bcd-subtitle') as HTMLParagraphElement | null
+  closeButton.onclick = cancel
   overlay.onclick = (event) => {
     if (event.target === overlay) cancel()
   }
   document.addEventListener('keydown', onKeydown)
 
   const methodsEl = panel.querySelector('.bcd-methods') as HTMLDivElement | null
+  const localesEl = panel.querySelector('.bcd-locales') as HTMLDivElement
   const contentEl = panel.querySelector('.bcd-content') as HTMLDivElement | null
+
+  /** Switches the dialog's own language live, without closing it. */
+  function setLocale(next: BiatecLocale): void {
+    if (next === locale) return
+    locale = next
+    i18n = TRANSLATIONS[locale]
+    titleEl.textContent = i18n.title
+    if (subtitleEl) subtitleEl.textContent = i18n.subtitle
+    closeButton.setAttribute('aria-label', i18n.cancel)
+    overlay.setAttribute('aria-label', i18n.title)
+    renderMethods()
+    renderLocales()
+    renderContent()
+  }
+
+  function renderLocales(): void {
+    localesEl.innerHTML = SUPPORTED_LOCALES.map((loc) => {
+      const name = LOCALE_NAME[loc]
+      return `
+        <button type="button" class="bcd-locale${loc === locale ? ' bcd-locale--active' : ''}" data-locale="${loc}" title="${escapeHtml(name)}" aria-label="${escapeHtml(name)}" aria-pressed="${loc === locale}">
+          ${LOCALE_FLAG[loc]}
+        </button>`
+    }).join('')
+    for (const button of localesEl.querySelectorAll<HTMLButtonElement>('[data-locale]')) {
+      button.onclick = () => setLocale(button.dataset.locale as BiatecLocale)
+    }
+  }
 
   function renderMethods(): void {
     if (!methodsEl) return
@@ -239,6 +276,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   }
 
   if (showPicker) renderMethods()
+  renderLocales()
   select(options.defaultMethod, true)
 
   document.body.appendChild(overlay)
@@ -342,7 +380,7 @@ html[data-theme='light'] .bcd-overlay {
     padding: 2rem;
   }
   .bcd-panel:not(.bcd-panel--single) .bcd-body { gap: 2rem; }
-  .bcd-panel:not(.bcd-panel--picker-only):not(.bcd-panel--single) .bcd-methods { width: 196px; }
+  .bcd-panel:not(.bcd-panel--picker-only):not(.bcd-panel--single) .bcd-sidebar { width: 196px; }
   .bcd-panel:not(.bcd-panel--single) .bcd-header { margin-bottom: 1.5rem; }
 }
 .bcd-close {
@@ -369,8 +407,12 @@ html[data-theme='light'] .bcd-overlay {
 .bcd-subtitle { margin: 0.15rem 0 0; font-size: 0.85rem; color: var(--bcd-muted); }
 .bcd-body { display: flex; gap: 1.25rem; }
 .bcd-panel--single .bcd-body, .bcd-panel--picker-only .bcd-body { flex-direction: column; }
+.bcd-sidebar { display: flex; flex-direction: column; gap: 1rem; flex: 0 0 auto; }
+/* Nudged down from the header so the picker doesn't sit flush against it — reads better next
+   to the content column, which already has its own visual weight (QR tile) up top. */
+.bcd-panel:not(.bcd-panel--picker-only):not(.bcd-panel--single) .bcd-sidebar { margin-top: 50px; }
 .bcd-methods { display: flex; flex-direction: column; gap: 0.5rem; flex: 0 0 auto; }
-.bcd-panel:not(.bcd-panel--picker-only) .bcd-methods { width: 168px; }
+.bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar { width: 168px; }
 .bcd-method {
   display: flex;
   align-items: center;
@@ -398,6 +440,23 @@ html[data-theme='light'] .bcd-overlay {
 .bcd-dot { width: 0.45rem; height: 0.45rem; border-radius: 999px; background: var(--bcd-muted); opacity: 0.4; flex-shrink: 0; }
 .bcd-dot--ready { background: #22c55e; opacity: 1; }
 .bcd-dot--error { background: var(--bcd-danger); opacity: 1; }
+.bcd-locales { display: flex; flex-wrap: wrap; gap: 0.4rem; }
+.bcd-locale {
+  width: 1.5rem;
+  height: 1.5rem;
+  padding: 0;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background: transparent;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  opacity: 0.55;
+  transition: opacity 120ms ease, border-color 120ms ease, transform 120ms ease;
+}
+.bcd-locale:hover { opacity: 0.85; transform: translateY(-1px); }
+.bcd-locale--active { opacity: 1; border-color: var(--bcd-accent); }
+.bcd-locale svg { width: 100%; height: 100%; border-radius: 999px; display: block; }
 .bcd-content { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
 .bcd-content-title { margin: 0 0 0.85rem; font-size: 0.95rem; font-weight: 600; }
 .bcd-footnote { margin: 0.9rem 0 0; font-size: 0.75rem; color: var(--bcd-muted); }
@@ -454,7 +513,8 @@ html[data-theme='light'] .bcd-overlay {
 .bcd-copy:hover { filter: brightness(1.08); }
 @media (max-width: 420px) {
   .bcd-body { flex-direction: column; }
-  .bcd-panel:not(.bcd-panel--picker-only) .bcd-methods { width: 100%; flex-direction: row; }
+  .bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar { width: 100%; margin-top: 0; }
+  .bcd-methods { flex-direction: row; }
   .bcd-method-hint { display: none; }
 }
 `
