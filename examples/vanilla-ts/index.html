@@ -5,6 +5,20 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Biatec Wallet × use-wallet example</title>
     <meta name="description" content="Minimal use-wallet v5 dApp using the Biatec Wallet adapter" />
+    <script>
+      // Applied before first paint (and before any CSS below) so the page never flashes the
+      // wrong theme on reload — reads the choice made by the toggle button in <body>.
+      ;(function () {
+        try {
+          var stored = localStorage.getItem('biatec-example-theme')
+          if (stored === 'light' || stored === 'dark') {
+            document.documentElement.setAttribute('data-theme', stored)
+          }
+        } catch {
+          /* localStorage unavailable (e.g. private mode) — fall back to system preference */
+        }
+      })()
+    </script>
     <style>
       :root {
         color-scheme: light dark;
@@ -19,7 +33,7 @@
         --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
       }
       @media (prefers-color-scheme: dark) {
-        :root {
+        :root:not([data-theme='light']) {
           --bg: #0b1220;
           --bg-accent: #0f172a;
           --card-bg: rgba(255, 255, 255, 0.04);
@@ -30,6 +44,22 @@
           --accent-soft: rgba(45, 212, 191, 0.14);
           --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
         }
+      }
+      /* An explicit choice from the toggle button always wins, in either direction. */
+      :root[data-theme='dark'] {
+        color-scheme: dark;
+        --bg: #0b1220;
+        --bg-accent: #0f172a;
+        --card-bg: rgba(255, 255, 255, 0.04);
+        --card-border: rgba(255, 255, 255, 0.08);
+        --text: #f1f5f9;
+        --muted: #94a3b8;
+        --accent: #2dd4bf;
+        --accent-soft: rgba(45, 212, 191, 0.14);
+        --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+      }
+      :root[data-theme='light'] {
+        color-scheme: light;
       }
       * {
         box-sizing: border-box;
@@ -57,6 +87,12 @@
         box-shadow: var(--shadow);
         padding: 2rem;
       }
+      .header-row {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 1rem;
+      }
       button {
         padding: 0.5rem 1rem;
         margin-right: 0.5rem;
@@ -67,6 +103,15 @@
         font-weight: 600;
         font-size: 0.85rem;
         cursor: pointer;
+      }
+      #theme-toggle {
+        margin-right: 0;
+        padding: 0.4rem 0.6rem;
+        background: var(--accent-soft);
+        color: var(--text);
+        font-size: 1rem;
+        line-height: 1;
+        flex-shrink: 0;
       }
       select {
         border-radius: 8px;
@@ -83,7 +128,10 @@
   </head>
   <body>
     <div class="card">
-      <h1 style="margin-top: 0; font-size: 1.4rem">Biatec Wallet × use-wallet</h1>
+      <div class="header-row">
+        <h1 style="margin: 0; font-size: 1.4rem">Biatec Wallet × use-wallet</h1>
+        <button id="theme-toggle" type="button" aria-label="Switch to dark mode">🌙</button>
+      </div>
       <p style="color: var(--muted)">
         <label
           >Network

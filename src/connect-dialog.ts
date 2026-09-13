@@ -2,8 +2,10 @@
  * Built-in connect UI for the unified Biatec Wallet connector: a modern, glassmorphic dialog
  * that shows a method selector (WalletConnect / Liquid Auth) on the left and the pairing QR
  * code / link for whichever method is selected on the right — defaulting to WalletConnect when
- * both are enabled. Supports light and dark mode via `prefers-color-scheme`. No framework
- * dependency; a lazy `qrcode` import renders the QR only while the dialog is open.
+ * both are enabled. Supports light and dark mode via `prefers-color-scheme`, and also respects
+ * an explicit `data-theme="dark"` / `data-theme="light"` attribute on `<html>` if the host page
+ * sets one (e.g. from its own theme toggle) — that always wins over the system preference. No
+ * framework dependency; a lazy `qrcode` import renders the QR only while the dialog is open.
  */
 import { icon } from './icon'
 import { BIATEC_WALLET_URL } from './adapter-constants'
@@ -286,7 +288,7 @@ const CSS = `
   --bcd-danger: #dc2626;
 }
 @media (prefers-color-scheme: dark) {
-  .bcd-overlay {
+  html:not([data-theme='light']) .bcd-overlay {
     --bcd-overlay: rgba(2, 6, 12, 0.6);
     --bcd-bg: rgba(24, 30, 42, 0.78);
     --bcd-border: rgba(255, 255, 255, 0.08);
@@ -298,6 +300,32 @@ const CSS = `
     --bcd-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
     --bcd-danger: #f87171;
   }
+}
+/* An explicit data-theme attribute on <html> (set by the host page's own light/dark toggle, if
+   it has one) always wins over the system preference above, in either direction. */
+html[data-theme='dark'] .bcd-overlay {
+  --bcd-overlay: rgba(2, 6, 12, 0.6);
+  --bcd-bg: rgba(24, 30, 42, 0.78);
+  --bcd-border: rgba(255, 255, 255, 0.08);
+  --bcd-text: #f1f5f9;
+  --bcd-muted: #94a3b8;
+  --bcd-accent: #2dd4bf;
+  --bcd-accent-soft: rgba(45, 212, 191, 0.16);
+  --bcd-surface: rgba(255, 255, 255, 0.05);
+  --bcd-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+  --bcd-danger: #f87171;
+}
+html[data-theme='light'] .bcd-overlay {
+  --bcd-overlay: rgba(15, 23, 42, 0.45);
+  --bcd-bg: rgba(255, 255, 255, 0.82);
+  --bcd-border: rgba(15, 23, 42, 0.08);
+  --bcd-text: #0f172a;
+  --bcd-muted: #64748b;
+  --bcd-accent: #0f766e;
+  --bcd-accent-soft: rgba(15, 118, 110, 0.12);
+  --bcd-surface: rgba(255, 255, 255, 0.55);
+  --bcd-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.08);
+  --bcd-danger: #dc2626;
 }
 .bcd-overlay--visible { opacity: 1; }
 .bcd-overlay--visible .bcd-panel { transform: scale(1) translateY(0); opacity: 1; }

@@ -15,6 +15,33 @@ const networks = new NetworkConfigBuilder()
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
+// --- Light/dark mode toggle -------------------------------------------------------- //
+// The inline script in index.html's <head> already applied any stored choice before first
+// paint (no flash on reload); this just wires up the button and keeps its icon/label in sync.
+// The adapter's own built-in connect dialog (src/connect-dialog.ts) reads the same
+// `data-theme` attribute on <html>, so it always matches whatever the page is showing.
+const THEME_STORAGE_KEY = 'biatec-example-theme'
+const themeToggle = $<HTMLButtonElement>('theme-toggle')
+
+function currentTheme(): 'light' | 'dark' {
+  const attr = document.documentElement.getAttribute('data-theme')
+  if (attr === 'light' || attr === 'dark') return attr
+  return window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+}
+
+function applyTheme(theme: 'light' | 'dark') {
+  document.documentElement.setAttribute('data-theme', theme)
+  localStorage.setItem(THEME_STORAGE_KEY, theme)
+  themeToggle.textContent = theme === 'dark' ? '☀️' : '🌙'
+  themeToggle.setAttribute(
+    'aria-label',
+    theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'
+  )
+}
+
+applyTheme(currentTheme())
+themeToggle.onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark')
+
 // No `onDisplayUri` here, so `connect()` shows the adapter's own built-in dialog: one window
 // with a method selector (WalletConnect / Liquid Auth) on the left and the QR code for whichever
 // method is selected on the right — see src/connect-dialog.ts in the adapter package.

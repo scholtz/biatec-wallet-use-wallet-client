@@ -2,6 +2,7 @@ import { useWallet } from '@txnlab/use-wallet-react'
 import { ConnectWallet } from './ConnectWallet'
 import { NetworkSwitcher } from './NetworkSwitcher'
 import { SignActions } from './SignActions'
+import { ThemeToggle } from './ThemeToggle'
 
 export function App() {
   const { isReady, activeAddress } = useWallet()
@@ -19,7 +20,17 @@ export function App() {
           padding: '2rem'
         }}
       >
-        <h1 style={{ marginTop: 0, fontSize: '1.4rem' }}>Biatec Wallet × use-wallet (React)</h1>
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            justifyContent: 'space-between',
+            gap: '1rem'
+          }}
+        >
+          <h1 style={{ margin: 0, fontSize: '1.4rem' }}>Biatec Wallet × use-wallet (React)</h1>
+          <ThemeToggle />
+        </div>
         <p style={{ color: 'var(--muted)', lineHeight: 1.5 }}>
           Minimal dApp showing how to integrate{' '}
           <a href="https://wallet.biatec.io" target="_blank" rel="noreferrer">
