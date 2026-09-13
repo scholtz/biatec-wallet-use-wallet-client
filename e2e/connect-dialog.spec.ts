@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
-test('clicking Connect opens the built-in dialog with WalletConnect selected by default', async ({
+test('clicking Connect opens the built-in dialog with WalletConnect selected and its content visible', async ({
   page
 }) => {
   const pageErrors: string[] = []
@@ -27,27 +27,35 @@ test('clicking Connect opens the built-in dialog with WalletConnect selected by 
   const panel = page.locator('.bcd-panel')
   await expect(panel).toBeVisible()
 
-  // The vanilla-ts example passes `onDisplayUri`, so the built-in dialog renders picker-only
-  // (method selector, no content panel) — the actual URI/QR is handed off to the example's own
-  // `#wc-dialog`. Both methods should be listed with WalletConnect selected by default.
+  // The vanilla-ts example passes no `onDisplayUri`, so the built-in dialog renders its full
+  // single-window UI: a method selector on the left, both methods listed, WalletConnect
+  // selected by default, and that method's content (spinner, then QR/link) on the right —
+  // never a second, separate dialog.
   const methods = page.locator('.bcd-method')
   await expect(methods).toHaveCount(2)
   await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
-  await expect(panel.locator('.bcd-content')).toHaveCount(0)
+  await expect(panel.locator('.bcd-content')).toBeVisible()
+  await expect(panel.locator('.bcd-content-state, .bcd-qr-tile')).toBeVisible()
 
   expect(pageErrors).toEqual([])
   await expect(page.locator('#log')).not.toContainText('Cannot access')
 })
 
-test('switching to the Liquid Auth tab activates it without throwing', async ({ page }) => {
+test('switching to the Liquid Auth tab updates the content panel without throwing', async ({
+  page
+}) => {
   const pageErrors: string[] = []
   page.on('pageerror', (error) => pageErrors.push(error.message))
 
   await page.click('#connect')
-  await expect(page.locator('.bcd-panel')).toBeVisible()
+  const panel = page.locator('.bcd-panel')
+  await expect(panel).toBeVisible()
 
   await page.click('[data-method="liquid"]')
   await expect(page.locator('.bcd-method--active')).toContainText('Liquid Auth')
+  await expect(panel.locator('.bcd-content-title')).toContainText('Liquid Auth', {
+    timeout: 10000
+  })
 
   expect(pageErrors).toEqual([])
 })

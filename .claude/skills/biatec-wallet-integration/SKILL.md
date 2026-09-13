@@ -224,16 +224,23 @@ walletManager.subscribe(() => {
 })
 ```
 
-## 5. Optional: minimal QR-code-only pairing UI
+## 5. Default pairing UI (do nothing) / optional fully custom UI
 
-By default `connect()` shows a built-in dialog with just the raw pairing/session link and a copy
-button — no wallet explorer or other wallets' download links. If the user wants a **branded QR
-code** instead of that plain link (or a fully custom picker), implement this:
+By default — i.e. don't pass `onDisplayUri` at all — `connect()` shows the adapter's own built-in
+dialog: one window with a method selector (WalletConnect / Liquid Auth, when both are enabled) on
+the left and a QR code, the raw pairing/session link, and a copy button on the right, matching the
+system's light/dark theme. **This is almost always the right choice** — don't build a custom
+pairing dialog unless the user explicitly asks for one; just call `biatec({ projectId, ... })`
+with no `onDisplayUri` and leave it there. Both example apps in this repo (`examples/react-ts`,
+`examples/vanilla-ts`) do exactly this.
+
+Only if the user explicitly wants **their own** pairing UI (not just a different look — the
+built-in dialog is already themeable via their page's light/dark mode), implement this instead:
 
 1. Add a QR code renderer: `<pkg-manager> add qrcode` (+ `@types/qrcode` as a dev dependency in a
    TypeScript project).
 2. Pass `onDisplayUri` in Step 2's `biatec({...})` call — it receives the raw pairing/session
-   string, plus which transport produced it, instead of the built-in dialog opening itself:
+   string, plus which transport produced it, instead of the built-in dialog's QR/link step:
 
    ```ts
    biatec({
@@ -246,22 +253,14 @@ code** instead of that plain link (or a fully custom picker), implement this:
    button calling `navigator.clipboard.writeText(uri)`. Wrap the `wallet.connect()` call from
    Step 4 in `try { ... } finally { hideQrDialog() }` so the dialog closes whether the connection
    succeeds, fails, or is cancelled. If Liquid Auth is enabled (Step 5b, the default), the built-in
-   method picker still shows first — this dialog only replaces the _second_ step, after a method
-   is chosen.
+   method selector still shows first — `onDisplayUri` only replaces the QR/link step after a
+   method is chosen.
 4. If the framework wraps `WalletManager` construction in a module-scope file (React/Solid/Svelte,
    per Step 2) rather than component state, `onDisplayUri` fires outside the framework's reactive
    system — bridge it with a plain `EventTarget` (emit an event from `onDisplayUri`, subscribe to
    it in the dialog component's effect/lifecycle hook). Don't reach for a state-management library
    for this — one `EventTarget` is enough. Vue's `WalletManagerPlugin` and a vanilla setup don't
    need this bridge; call the dialog function directly.
-
-Reference implementation to copy from rather than reinvent:
-[`examples/react-ts/src/ConnectQrDialog.tsx`](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/examples/react-ts/src/ConnectQrDialog.tsx)
-
-- [`walletManager.ts`](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/examples/react-ts/src/walletManager.ts)
-  (React, with the `EventTarget` bridge) and
-  [`examples/vanilla-ts/src/main.ts`](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/examples/vanilla-ts/src/main.ts)
-  (vanilla, using the native `<dialog>` element, no bridge needed).
 
 ## 5b. Liquid Auth transport and the method picker (enabled by default)
 

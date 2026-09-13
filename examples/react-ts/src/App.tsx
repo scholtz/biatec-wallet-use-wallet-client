@@ -1,5 +1,4 @@
 import { useWallet } from '@txnlab/use-wallet-react'
-import { ConnectQrDialog } from './ConnectQrDialog'
 import { ConnectWallet } from './ConnectWallet'
 import { NetworkSwitcher } from './NetworkSwitcher'
 import { SignActions } from './SignActions'
@@ -43,8 +42,6 @@ export function App() {
           </>
         )}
       </div>
-
-      <ConnectQrDialog />
     </main>
   )
 }

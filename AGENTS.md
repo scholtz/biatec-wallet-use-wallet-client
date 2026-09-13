@@ -42,8 +42,10 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
   subclasses) taking a `TransportContext`: `walletconnect-transport.ts` (`WalletConnectTransport`)
   and `liquid-transport.ts` (`LiquidTransport`). `types.ts` defines `TransportContext`,
   `BiatecAccountMetadata`, `BiatecDisplayUriInfo`.
-- `src/method-picker-dialog.ts` — built-in vanilla-DOM UI: the WalletConnect-vs-Liquid-Auth
-  picker and the default "here's your pairing link" dialog for both transports.
+- `src/connect-dialog.ts` — the built-in vanilla-DOM connect UI: one window with a method
+  selector (WalletConnect / Liquid Auth) on the left and the QR/link content for the selected
+  method on the right; also the `adapter-constants.ts` values it and `adapter.ts` both need
+  without importing each other.
 - `src/index.ts` — the `biatec()` factory + public exports (no separate Liquid Auth factory).
 - `src/liquid/` — Liquid Auth wire protocol, transport-agnostic: `protocol.ts` (ARC-0027 CBOR
   envelope + ARC-0060 extension, deep links, base64url — mirrored in the wallet repo at

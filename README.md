@@ -163,12 +163,9 @@ biatec({
 })
 ```
 
-Both examples in [examples/](examples) implement exactly this — a small dialog with a QR code
-(via the [`qrcode`](https://www.npmjs.com/package/qrcode) package) and a "Copy connection string"
-button, no wallet list:
-[`examples/react-ts/src/ConnectQrDialog.tsx`](examples/react-ts/src/ConnectQrDialog.tsx) and
-[`examples/vanilla-ts/src/main.ts`](examples/vanilla-ts/src/main.ts) (using the native
-`<dialog>` element). Copy either one as a starting point.
+Both examples in [examples/](examples) rely on the built-in dialog (no `onDisplayUri` set) — see
+their `walletManager.ts` / `main.ts`. Only reach for `onDisplayUri` when you need pixel-level
+control over the pairing UI yourself.
 
 ### Extra networks (Voi, Aramid)
 

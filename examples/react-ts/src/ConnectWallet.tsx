@@ -1,6 +1,5 @@
 import { useWallet } from '@txnlab/use-wallet-react'
 import { useState, type CSSProperties } from 'react'
-import { closeWalletConnectDialog } from './walletManager'
 
 /**
  * Renders every registered wallet as a connect/disconnect button, and an
@@ -8,8 +7,9 @@ import { closeWalletConnectDialog } from './walletManager'
  * wallet in `wallets` (only Biatec Wallet is registered in this example),
  * so this component doesn't hardcode anything Biatec-specific.
  *
- * `wallet.connect()` here doesn't pass a `method`, so Biatec's built-in method picker
- * (WalletConnect vs. Liquid Auth) shows first — before `<ConnectQrDialog>` ever receives a URI.
+ * `wallet.connect()` here doesn't pass a `method` or `onDisplayUri`, so Biatec's built-in
+ * connect dialog handles everything: method selector on the left, live QR on the right, all in
+ * one window — see src/connect-dialog.ts in the adapter package.
  */
 export function ConnectWallet() {
   const { wallets, activeWallet, activeAddress } = useWallet()
@@ -27,9 +27,6 @@ export function ConnectWallet() {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
       setConnecting(null)
-      // The QR dialog (walletManager.ts's onDisplayUri) only knows to open itself; it doesn't
-      // know when connect() settles, so close it explicitly here — on success and on failure.
-      closeWalletConnectDialog()
     }
   }
 

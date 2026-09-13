@@ -17,8 +17,15 @@ const METHOD_LABEL: Record<BiatecMethod, string> = {
 }
 
 const METHOD_HINT: Record<BiatecMethod, string> = {
-  walletconnect: 'Relay-based session',
-  liquid: 'Passkey, peer-to-peer'
+  walletconnect: 'Relay-based pairing',
+  liquid: 'Peer-to-peer, passkey'
+}
+
+const METHOD_INSTRUCTIONS: Record<BiatecMethod, string> = {
+  walletconnect:
+    'Open <strong>Biatec Wallet</strong> on your phone, tap the scan icon, and point your camera at this code.',
+  liquid:
+    'Open <strong>Biatec Wallet</strong>, choose <strong>Liquid Auth</strong>, and scan this code. You’ll approve the connection with your device passkey — no relay server involved.'
 }
 
 const METHOD_ICON: Record<BiatecMethod, string> = {
@@ -140,7 +147,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
       <div class="bcd-logo">${icon}</div>
       <div>
         <h2 class="bcd-title">Connect Biatec Wallet</h2>
-        ${showPicker ? '<p class="bcd-subtitle">Choose how you’d like to connect</p>' : ''}
+        ${showPicker ? '<p class="bcd-subtitle">Pick a method, then scan the code</p>' : ''}
       </div>
     </div>
     <div class="bcd-body">
@@ -206,12 +213,14 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     }
     const uri = state.uri ?? ''
     contentEl.innerHTML = `
+      <h3 class="bcd-content-title">Connect with ${METHOD_LABEL[selected]}</h3>
       <div class="bcd-qr-tile"><img class="bcd-qr" alt="Pairing QR code" /></div>
-      <p class="bcd-hint">Scan with Biatec Wallet, or open
-        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">wallet.biatec.io</a>
-        and paste the link.</p>
-      <input class="bcd-uri" readonly value="${escapeHtml(uri)}" />
+      <p class="bcd-hint">${METHOD_INSTRUCTIONS[selected]}</p>
+      <input class="bcd-uri" readonly value="${escapeHtml(uri)}" aria-label="Pairing link" />
       <button type="button" class="bcd-copy">Copy link</button>
+      <p class="bcd-footnote">Don’t have Biatec Wallet?
+        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">Get it here</a>
+      </p>
     `
     const img = contentEl.querySelector('.bcd-qr') as HTMLImageElement
     renderQrDataUrl(uri)
@@ -363,6 +372,8 @@ const CSS = `
 .bcd-dot--ready { background: #22c55e; opacity: 1; }
 .bcd-dot--error { background: var(--bcd-danger); opacity: 1; }
 .bcd-content { flex: 1; display: flex; flex-direction: column; align-items: center; text-align: center; min-width: 0; }
+.bcd-content-title { margin: 0 0 0.85rem; font-size: 0.95rem; font-weight: 600; }
+.bcd-footnote { margin: 0.9rem 0 0; font-size: 0.75rem; color: var(--bcd-muted); }
 .bcd-content-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.75rem; min-height: 220px; }
 .bcd-spinner {
   width: 2rem;

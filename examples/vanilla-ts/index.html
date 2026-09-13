@@ -79,48 +79,6 @@
         border-radius: 12px;
         overflow-x: auto;
       }
-      dialog {
-        border: none;
-        border-radius: 20px;
-        padding: 1.5rem;
-        max-width: 340px;
-        width: 90%;
-        text-align: center;
-        color: var(--text);
-        background: var(--card-bg);
-        backdrop-filter: blur(28px) saturate(180%);
-        -webkit-backdrop-filter: blur(28px) saturate(180%);
-        border: 1px solid var(--card-border);
-        box-shadow: var(--shadow);
-      }
-      dialog::backdrop {
-        background: rgba(15, 23, 42, 0.45);
-        backdrop-filter: blur(6px);
-      }
-      dialog .qr-tile {
-        width: 220px;
-        height: 220px;
-        margin: 0 auto;
-        padding: 10px;
-        background: #fff;
-        border-radius: 16px;
-        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
-        display: grid;
-        place-items: center;
-      }
-      dialog img {
-        width: 100%;
-        height: 100%;
-      }
-      dialog button {
-        display: block;
-        width: 100%;
-        margin: 0.5rem 0 0;
-      }
-      dialog #wc-cancel {
-        background: transparent;
-        color: var(--muted);
-      }
     </style>
   </head>
   <body>
@@ -133,6 +91,12 @@
         ></label>
       </p>
       <p>
+        <!--
+          No custom pairing UI here: biatec() below sets no `onDisplayUri`, so clicking Connect
+          shows the adapter's own built-in dialog — one window with a method selector
+          (WalletConnect / Liquid Auth) and the QR code for whichever method is selected, side
+          by side. See src/connect-dialog.ts in the adapter package.
+        -->
         <button id="connect">Connect Biatec Wallet</button>
         <button id="disconnect" hidden>Disconnect</button>
       </p>
@@ -142,20 +106,6 @@
       </p>
       <pre id="log"></pre>
     </div>
-
-    <!--
-      Minimal pairing UI: just a QR code and a copy button — no wallet explorer, no "get a
-      wallet" links, nothing else. Shown instead of the adapter's built-in URI dialog because
-      biatec() below is configured with onDisplayUri. Used for both transports (WalletConnect
-      and Liquid Auth); the heading is updated per-method in src/main.ts. The built-in method
-      picker (choose WalletConnect vs. Liquid Auth) still appears first.
-    -->
-    <dialog id="wc-dialog">
-      <h2 id="wc-title" style="margin: 0 0 1rem; font-size: 1.05rem">Scan with Biatec Wallet</h2>
-      <div class="qr-tile"><img id="wc-qr" alt="Pairing QR code" /></div>
-      <button id="wc-copy" type="button">Copy connection string</button>
-      <button id="wc-cancel" type="button">Cancel</button>
-    </dialog>
 
     <script type="module" src="/src/main.ts"></script>
   </body>

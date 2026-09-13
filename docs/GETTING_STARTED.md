@@ -222,11 +222,16 @@ Switching `walletManager.setActiveNetwork('voimain')` (or the framework hook's `
 does **not** require reconnecting — every configured network's chain id is requested as an
 optional chain up front. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#multi-chain-sessions).
 
-## 8. Custom QR UI (QR code + copy button only)
+## 8. Custom pairing UI (advanced, optional)
 
-By default `connect()` shows a built-in dialog with a QR code, the raw pairing/session link, and
-a copy button. Pass `onDisplayUri` to receive the raw string yourself and render your own UI
-instead:
+By default `connect()` shows the adapter's own built-in dialog — one window with a method
+selector on the left (when both transports are enabled) and a QR code, the raw pairing/session
+link, and a copy button on the right. Both example apps in this repo use exactly this default
+(no `onDisplayUri` set) — open one of them (`pnpm --filter example-vanilla-ts dev` or
+`example-react-ts`) to see it.
+
+Most dApps don't need to replace it. If you do want full control over the pairing UI, pass
+`onDisplayUri` to receive the raw string yourself instead:
 
 ```ts
 biatec({
@@ -241,25 +246,11 @@ biatec({
 `connect()` still resolves once the user approves in Biatec Wallet, so a `try { await
 wallet.connect() } finally { hideMyQrDialog() }` pattern works well — call your close function in
 a `finally` block so the dialog also disappears if the user cancels or the connection fails, not
-only on success.
-
-For a complete, working implementation of exactly this (QR code rendered with the
-[`qrcode`](https://www.npmjs.com/package/qrcode) package, plus a "Copy connection string" button,
-nothing else), see:
-
-- **React**: [`examples/react-ts/src/ConnectQrDialog.tsx`](../examples/react-ts/src/ConnectQrDialog.tsx)
-  — a modal component that subscribes to `onDisplayUri` via a small `EventTarget` bridge defined
-  in [`walletManager.ts`](../examples/react-ts/src/walletManager.ts) (needed because the
-  `WalletManager`/`biatec()` config is created once at module scope, outside React, so
-  `onDisplayUri` can't call `useState` directly — it emits an event that the component listens
-  for instead).
-- **Vanilla**: [`examples/vanilla-ts/src/main.ts`](../examples/vanilla-ts/src/main.ts) — uses the
-  native `<dialog>` element (see the matching markup in
-  [`index.html`](../examples/vanilla-ts/index.html)); no event bridge needed since the whole app
-  is already plain imperative code.
-
-Both call `navigator.clipboard.writeText(uri)` for the copy button — that API requires a secure
-context (`https://` or `localhost`), which any real deployment already has.
+only on success. Setting `onDisplayUri` still leaves the built-in method selector in place when
+both transports are enabled (it only replaces the QR/link step); render your own QR code with a
+library such as [`qrcode`](https://www.npmjs.com/package/qrcode), and remember
+`navigator.clipboard.writeText()` for a copy button requires a secure context (`https://` or
+`localhost`).
 
 ## 9. Liquid Auth and the method picker
 
