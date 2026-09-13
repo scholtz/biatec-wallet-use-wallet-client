@@ -15,8 +15,9 @@ Connects your Algorand / AVM dApp to Biatec Wallet with
   are all approved in one session, so `setActiveNetwork()` does not require a reconnect,
 - **two connection transports under one wallet**: WalletConnect v2 (relay-based) and Liquid Auth
   (passkey-linked, peer-to-peer WebRTC, no relay in the signing path) — `connect()` shows a
-  built-in picker between the two, or skip it with `connect({ method: 'liquid' })`,
-- a built-in pairing dialog **or** your own QR / deep-link UI through `onDisplayUri`.
+  modern, dark/light-aware dialog with a method selector next to a live QR code, or skip it with
+  `connect({ method: 'liquid' })`,
+- that same built-in dialog **or** your own QR / deep-link UI through `onDisplayUri`.
 
 Works with every use-wallet framework binding: `@txnlab/use-wallet-react`, `-vue`, `-solid`, `-svelte`
 and the vanilla `WalletManager`.
@@ -142,11 +143,14 @@ new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
 
 ### Choosing a connection method
 
-When both transports are enabled (the default), `connect()` shows a built-in picker — Biatec
-logo, "Connect with WalletConnect" / "Connect with Liquid Auth (Passkey)". Skip it from your own
-UI with `connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })`, or disable
-Liquid Auth entirely with `biatec({ projectId, liquid: false })` so `connect()` always goes
-straight to WalletConnect.
+When both transports are enabled (the default), `connect()` shows a modern, glassmorphic dialog
+— a method selector (WalletConnect / Liquid Auth) next to a live QR code / link for whichever
+method is selected. WalletConnect is selected by default, so its QR is visible immediately;
+switching to the Liquid Auth tab connects that transport on demand. It follows the system's
+light/dark theme automatically. Skip the selector from your own UI with
+`connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })`, or disable Liquid Auth
+entirely with `biatec({ projectId, liquid: false })` so `connect()` always goes straight to
+WalletConnect.
 
 ### Custom QR code instead of the built-in dialog
 

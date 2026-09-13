@@ -28,7 +28,7 @@ import type SignClient from '@walletconnect/sign-client'
 import type { SessionTypes, SignClientTypes } from '@walletconnect/types'
 import { getWindowMetadata } from '../window-metadata'
 import { SessionError } from '../errors'
-import type { BiatecAccountMetadata, DialogHandle, TransportContext } from './types'
+import { raceAbort, type BiatecAccountMetadata, type TransportContext } from './types'
 
 export const SIGN_TXN_METHOD = 'algo_signTxn' as const
 export const SIGN_DATA_METHOD = 'algo_signData' as const
@@ -92,10 +92,10 @@ export interface WireStdSigData {
 export type SignDataResponse = Array<{ signature: string } | null | undefined>
 
 export interface WalletConnectConnectHandlers {
-  /** Pre-bound to include `{ method: 'walletconnect' }`; overrides the built-in dialog/modal. */
-  onDisplayUri?: (uri: string) => void | Promise<void>
-  /** Used when there's no `onDisplayUri` and `useWalletConnectModal` is not set. */
-  openFallbackDialog: (uri: string) => DialogHandle
+  /** Reports the pairing URI (unless `useWalletConnectModal` is set, which shows its own UI). */
+  onDisplayUri: (uri: string) => void | Promise<void>
+  /** Rejects the pending connect() promptly if aborted (e.g. the user cancelled the dialog). */
+  signal?: AbortSignal
 }
 
 export class WalletConnectTransport {
@@ -288,24 +288,17 @@ export class WalletConnectTransport {
         throw new Error('No URI found')
       }
 
-      let dialog: DialogHandle | undefined
-      if (handlers.onDisplayUri) {
-        await handlers.onDisplayUri(uri)
-      } else if (this.useWalletConnectModal) {
+      if (this.useWalletConnectModal) {
         const modal = this.modal ?? (await this.initializeModal())
         await modal.openModal({ uri })
       } else {
-        dialog = handlers.openFallbackDialog(uri)
+        await handlers.onDisplayUri(uri)
       }
 
-      try {
-        const session = await approval()
-        const walletAccounts = this.onSessionConnected(session)
-        this.ctx.logger.info('Connected successfully')
-        return walletAccounts
-      } finally {
-        dialog?.close()
-      }
+      const session = await raceAbort(approval(), handlers.signal)
+      const walletAccounts = this.onSessionConnected(session)
+      this.ctx.logger.info('Connected successfully')
+      return walletAccounts
     } catch (error: any) {
       this.ctx.logger.error('Error connecting:', error?.message ?? error)
       throw error

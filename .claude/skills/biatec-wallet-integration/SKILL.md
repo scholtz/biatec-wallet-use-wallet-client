@@ -281,11 +281,13 @@ biatec({
 ```
 
 With both transports enabled (the default), calling `wallet.connect()` with no arguments shows a
-**built-in picker** (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth
-(Passkey)"). Leave it as-is unless the user asks for a custom picker UI — in that case, build your
-own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
+**built-in, modern dialog**: a method selector (WalletConnect / Liquid Auth) next to a live QR
+code for whichever method is selected — WalletConnect selected by default so its QR appears
+immediately, with a tab to switch to Liquid Auth on demand. It follows the system's light/dark
+theme automatically. Leave it as-is unless the user asks for a custom picker UI — in that case,
+build your own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
 `wallet.connect({ method: 'walletconnect' })` directly to skip the built-in one. If the user only
-wants WalletConnect (no picker at all), pass `liquid: false`.
+wants WalletConnect (no selector at all), pass `liquid: false`.
 
 Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical regardless of
 which transport connected. Do not try to host a Liquid Auth service for the dApp: with the web

@@ -5,8 +5,9 @@
  * (https://wallet.biatec.io): WalletConnect v2 (ARC-0001 `algo_signTxn` / ARC-0060
  * `algo_signData` JSON-RPC) and Liquid Auth (passkey-linked WebRTC carrying the same two
  * operations over an ARC-0027 envelope). When both are available, `connect()` shows a
- * built-in picker so the end user chooses; pass `connect({ method: 'liquid' })` or
- * `connect({ method: 'walletconnect' })` to skip it. See docs/ARCHITECTURE.md.
+ * built-in dialog (method selector + live QR/link) defaulting to WalletConnect; pass
+ * `connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })` to skip it.
+ * See docs/ARCHITECTURE.md.
  */
 import type algosdk from 'algosdk'
 import {
@@ -17,15 +18,12 @@ import {
   type WalletAccount,
   type WalletMetadata
 } from '@txnlab/use-wallet/adapter'
+import { BIATEC_WALLET_URL } from './adapter-constants'
+import { openConnectDialog, type ConnectDialogController } from './connect-dialog'
 import { SessionError } from './errors'
 import { ICON } from './icon'
 import type { HelloResult } from './liquid/protocol'
-import { openMethodPickerDialog, openUriDisplayDialog } from './method-picker-dialog'
-import {
-  LiquidTransport,
-  type LiquidConnectHandlers,
-  type LiquidTransportOptions
-} from './transports/liquid-transport'
+import { LiquidTransport, type LiquidTransportOptions } from './transports/liquid-transport'
 import type {
   BiatecAccountMetadata,
   BiatecDisplayUriInfo,
@@ -34,11 +32,11 @@ import type {
 } from './transports/types'
 import {
   WalletConnectTransport,
-  type WalletConnectConnectHandlers,
   type WalletConnectTransportOptions
 } from './transports/walletconnect-transport'
 
 export { SessionError } from './errors'
+export { WALLET_ID, BIATEC_WALLET_URL } from './adapter-constants'
 export {
   DEFAULT_RELAY_URL,
   SIGN_DATA_METHOD,
@@ -51,15 +49,14 @@ export {
 export type { LiquidTransportOptions as BiatecLiquidTransportOptions } from './transports/liquid-transport'
 export type { BiatecAccountMetadata, BiatecDisplayUriInfo, BiatecMethod } from './transports/types'
 
-export const WALLET_ID = 'biatec' as const
-export const BIATEC_WALLET_URL = 'https://wallet.biatec.io'
-
 export interface BiatecWalletOptions extends WalletConnectTransportOptions {
   /**
-   * Called with the pairing/session URI instead of showing the built-in dialog (or the
-   * WalletConnect modal, if `useWalletConnectModal` is set). Use it to render your own QR
+   * Called with the pairing/session URI instead of showing the built-in dialog's content (or
+   * the WalletConnect modal, if `useWalletConnectModal` is set). Use it to render your own QR
    * code / deep link UI. `connect()` resolves once the wallet approves the connection, so
-   * you can close your UI then. `info.method` tells you which transport produced the URI.
+   * you can close your UI then. `info.method` tells you which transport produced the URI. The
+   * built-in method picker still appears when both transports are enabled and no `method` was
+   * given to `connect()` — this option only replaces the content step, not the picker.
    */
   onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
   /**
@@ -150,56 +147,121 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     return this.liquid?.isChannelOpen ?? false
   }
 
-  // ---------- Method picker / URI display glue ------------------------ //
+  // ---------- Transport dispatch helpers ------------------------------ //
 
-  private promptMethodChoice(): Promise<BiatecMethod> {
-    return new Promise((resolve, reject) => {
-      openMethodPickerDialog(
-        (method) => resolve(method),
-        () => reject(new SessionError('Connection cancelled'))
-      )
-    })
+  private getTransport(method: BiatecMethod): WalletConnectTransport | LiquidTransport {
+    return method === 'liquid' && this.liquid ? this.liquid : this.walletConnect
   }
 
-  private buildWalletConnectHandlers(): WalletConnectConnectHandlers {
-    const userOnDisplayUri = this.userOnDisplayUri
-    return {
-      ...(userOnDisplayUri
-        ? { onDisplayUri: (uri: string) => userOnDisplayUri(uri, { method: 'walletconnect' }) }
-        : {}),
-      openFallbackDialog: (uri) => openUriDisplayDialog(uri, 'walletconnect', () => undefined)
+  private makeOnDisplayUri(
+    method: BiatecMethod,
+    dialog?: ConnectDialogController
+  ): (uri: string, extra?: { requestId: string; origin: string }) => void | Promise<void> {
+    return (uri, extra) => {
+      dialog?.setState(method, { status: 'ready', uri })
+      if (!this.userOnDisplayUri) return undefined
+      const info: BiatecDisplayUriInfo =
+        method === 'liquid'
+          ? { method, requestId: extra?.requestId ?? '', origin: extra?.origin ?? '' }
+          : { method }
+      return this.userOnDisplayUri(uri, info)
     }
   }
 
-  private buildLiquidHandlers(): LiquidConnectHandlers {
-    const userOnDisplayUri = this.userOnDisplayUri
-    return {
-      ...(userOnDisplayUri
-        ? {
-            onDisplayUri: (uri: string, info: { requestId: string; origin: string }) =>
-              userOnDisplayUri(uri, {
-                method: 'liquid',
-                requestId: info.requestId,
-                origin: info.origin
-              })
-          }
-        : {}),
-      openFallbackDialog: (uri, onCancel) => openUriDisplayDialog(uri, 'liquid', onCancel)
-    }
+  private startTransport(
+    method: BiatecMethod,
+    onDisplayUri: (
+      uri: string,
+      extra?: { requestId: string; origin: string }
+    ) => void | Promise<void>,
+    signal?: AbortSignal
+  ): Promise<WalletAccount[]> {
+    return method === 'liquid' && this.liquid
+      ? this.liquid.connect({ onDisplayUri, ...(signal ? { signal } : {}) })
+      : this.walletConnect.connect({ onDisplayUri, ...(signal ? { signal } : {}) })
   }
 
   // ---------- Public: session lifecycle ------------------------------ //
 
   public connect = async (args?: ConnectArgs): Promise<WalletAccount[]> => {
-    const method = args?.method ?? (this.liquid ? await this.promptMethodChoice() : 'walletconnect')
+    if (args?.method) {
+      return this.connectWithDialog([args.method], args.method)
+    }
+    const availableMethods: BiatecMethod[] = this.liquid
+      ? ['walletconnect', 'liquid']
+      : ['walletconnect']
+    return this.connectWithDialog(availableMethods, 'walletconnect')
+  }
 
-    const accounts =
-      method === 'liquid' && this.liquid
-        ? await this.liquid.connect(this.buildLiquidHandlers())
-        : await this.walletConnect.connect(this.buildWalletConnectHandlers())
+  private connectWithDialog(
+    methods: BiatecMethod[],
+    defaultMethod: BiatecMethod
+  ): Promise<WalletAccount[]> {
+    const showContent = !this.userOnDisplayUri
 
-    this.activeMethod = method === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
-    return accounts
+    // Nothing to pick and nothing for the built-in dialog to show — the consumer already knows
+    // which method they want and renders their own UI for it.
+    if (methods.length === 1 && !showContent) {
+      return this.startTransport(defaultMethod, this.makeOnDisplayUri(defaultMethod)).then(
+        (accounts) => {
+          this.activeMethod = defaultMethod === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
+          return accounts
+        }
+      )
+    }
+
+    return new Promise((resolve, reject) => {
+      let settled = false
+      const started = new Set<BiatecMethod>()
+      const failed = new Set<BiatecMethod>()
+      const controller = new AbortController()
+
+      const dialog = openConnectDialog({
+        methods,
+        defaultMethod,
+        showContent,
+        onSelectMethod: (method) => attempt(method),
+        onCancel: () => {
+          if (settled) return
+          settled = true
+          controller.abort()
+          reject(new SessionError('Connection cancelled'))
+        }
+      })
+
+      const attempt = (method: BiatecMethod): void => {
+        if (settled || started.has(method)) return
+        started.add(method)
+        if (showContent) dialog.setState(method, { status: 'connecting' })
+
+        this.startTransport(method, this.makeOnDisplayUri(method, dialog), controller.signal)
+          .then((accounts) => {
+            if (settled) {
+              void this.getTransport(method)
+                .disconnect()
+                .catch(() => undefined)
+              return
+            }
+            settled = true
+            this.activeMethod = method === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
+            dialog.close()
+            resolve(accounts)
+          })
+          .catch((error: unknown) => {
+            if (settled) return
+            failed.add(method)
+            const message = error instanceof Error ? error.message : String(error)
+            if (showContent) dialog.setState(method, { status: 'error', error: message })
+            if (failed.size === methods.length) {
+              settled = true
+              dialog.close()
+              reject(error)
+            }
+          })
+      }
+
+      attempt(defaultMethod)
+    })
   }
 
   public disconnect = async (): Promise<void> => {

@@ -72,46 +72,92 @@ export function ConnectQrDialog() {
       style={{
         position: 'fixed',
         inset: 0,
-        background: 'rgba(0, 0, 0, 0.5)',
+        zIndex: 2147483000,
         display: 'flex',
         alignItems: 'center',
         justifyContent: 'center',
-        zIndex: 1000
+        padding: '1rem',
+        background: 'rgba(15, 23, 42, 0.45)',
+        backdropFilter: 'blur(6px)',
+        WebkitBackdropFilter: 'blur(6px)'
       }}
       onClick={() => setDetail(null)}
     >
       <div
         style={{
-          background: 'white',
-          borderRadius: 12,
+          background: 'var(--card-bg)',
+          backdropFilter: 'blur(28px) saturate(180%)',
+          WebkitBackdropFilter: 'blur(28px) saturate(180%)',
+          border: '1px solid var(--card-border)',
+          borderRadius: 20,
           padding: '1.5rem',
-          maxWidth: 320,
+          maxWidth: 340,
           width: '90%',
           textAlign: 'center',
-          boxShadow: '0 10px 40px rgba(0, 0, 0, 0.2)'
+          boxShadow: 'var(--shadow)',
+          color: 'var(--text)'
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem' }}>
+        <h2 style={{ margin: '0 0 1rem', fontSize: '1.05rem' }}>
           Scan with Biatec Wallet — {METHOD_LABELS[detail!.info.method]}
         </h2>
 
-        {qrDataUrl ? (
-          <img src={qrDataUrl} alt="WalletConnect pairing QR code" width={280} height={280} />
-        ) : (
-          <div style={{ width: 280, height: 280, margin: '0 auto' }}>Generating QR code…</div>
-        )}
+        <div
+          style={{
+            width: 220,
+            height: 220,
+            margin: '0 auto',
+            padding: 10,
+            background: '#fff',
+            borderRadius: 16,
+            boxShadow: '0 8px 24px rgba(15, 23, 42, 0.18)',
+            display: 'grid',
+            placeItems: 'center'
+          }}
+        >
+          {qrDataUrl ? (
+            <img
+              src={qrDataUrl}
+              alt="Pairing QR code"
+              width={200}
+              height={200}
+              style={{ display: 'block' }}
+            />
+          ) : (
+            <span style={{ color: '#64748b', fontSize: '0.8rem' }}>Generating QR code…</span>
+          )}
+        </div>
 
         <button
           onClick={handleCopy}
-          style={{ marginTop: '1rem', width: '100%', padding: '0.5rem' }}
+          style={{
+            marginTop: '1rem',
+            width: '100%',
+            padding: '0.6rem',
+            borderRadius: 10,
+            border: 'none',
+            background: 'var(--accent)',
+            color: '#fff',
+            fontWeight: 600,
+            cursor: 'pointer'
+          }}
         >
           {copied ? 'Copied!' : 'Copy connection string'}
         </button>
 
         <button
           onClick={() => setDetail(null)}
-          style={{ marginTop: '0.5rem', width: '100%', padding: '0.5rem', background: 'none' }}
+          style={{
+            marginTop: '0.5rem',
+            width: '100%',
+            padding: '0.55rem',
+            borderRadius: 10,
+            border: 'none',
+            background: 'transparent',
+            color: 'var(--muted)',
+            cursor: 'pointer'
+          }}
         >
           Cancel
         </button>

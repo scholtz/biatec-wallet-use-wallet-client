@@ -108,11 +108,12 @@ interface ConnectArgs {
 }
 ```
 
-Pass to `wallet.connect({ method: 'liquid' })` (or `'walletconnect'`) to skip the built-in method
-picker and connect with that transport directly — useful for a custom "choose your wallet"
-picker of your own. With no `method` and both transports enabled, `connect()` shows the built-in
-picker (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth (Passkey)");
-cancelling it rejects the returned promise.
+Pass to `wallet.connect({ method: 'liquid' })` (or `'walletconnect'`) to skip the built-in
+dialog's method selector and connect with that transport directly — useful for a custom "choose
+your wallet" picker of your own. With no `method` and both transports enabled, `connect()` shows
+the built-in dialog: a method selector next to a live QR code / link for the selected method,
+WalletConnect selected by default so its QR is visible immediately. Cancelling it (✕, backdrop,
+Escape) rejects the returned promise.
 
 ## `BiatecWalletAdapter`
 

@@ -1,5 +1,5 @@
 import { useWallet } from '@txnlab/use-wallet-react'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { closeWalletConnectDialog } from './walletManager'
 
 /**
@@ -33,6 +33,22 @@ export function ConnectWallet() {
     }
   }
 
+  const pillButton: CSSProperties = {
+    padding: '0.5rem 1rem',
+    borderRadius: 999,
+    border: 'none',
+    background: 'var(--accent)',
+    color: '#fff',
+    fontWeight: 600,
+    fontSize: '0.85rem',
+    cursor: 'pointer'
+  }
+  const ghostButton: CSSProperties = {
+    ...pillButton,
+    background: 'var(--accent-soft)',
+    color: 'var(--text)'
+  }
+
   return (
     <div>
       <ul
@@ -41,13 +57,23 @@ export function ConnectWallet() {
           padding: 0,
           display: 'flex',
           flexDirection: 'column',
-          gap: '0.5rem'
+          gap: '0.6rem'
         }}
       >
         {wallets.map((wallet) => (
-          <li key={wallet.id} style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+          <li
+            key={wallet.id}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.75rem',
+              padding: '0.6rem 0.8rem',
+              borderRadius: 16,
+              background: 'var(--accent-soft)'
+            }}
+          >
             <img src={wallet.metadata.icon} alt="" width={28} height={28} />
-            <span style={{ flex: 1 }}>{wallet.metadata.name}</span>
+            <span style={{ flex: 1, fontWeight: 600 }}>{wallet.metadata.name}</span>
 
             {wallet.isConnected ? (
               <>
@@ -55,6 +81,7 @@ export function ConnectWallet() {
                   <select
                     value={wallet.activeAccount?.address ?? ''}
                     onChange={(e) => wallet.setActiveAccount(e.target.value)}
+                    style={{ borderRadius: 8, padding: '0.3rem' }}
                   >
                     {wallet.accounts.map((account) => (
                       <option key={account.address} value={account.address}>
@@ -64,12 +91,20 @@ export function ConnectWallet() {
                   </select>
                 )}
                 {!wallet.isActive && (
-                  <button onClick={() => wallet.setActive()}>Use this wallet</button>
+                  <button style={ghostButton} onClick={() => wallet.setActive()}>
+                    Use this wallet
+                  </button>
                 )}
-                <button onClick={() => wallet.disconnect()}>Disconnect</button>
+                <button style={ghostButton} onClick={() => wallet.disconnect()}>
+                  Disconnect
+                </button>
               </>
             ) : (
-              <button onClick={() => handleConnect(wallet.id)} disabled={connecting === wallet.id}>
+              <button
+                style={pillButton}
+                onClick={() => handleConnect(wallet.id)}
+                disabled={connecting === wallet.id}
+              >
                 {connecting === wallet.id ? 'Connecting…' : 'Connect'}
               </button>
             )}
@@ -77,11 +112,12 @@ export function ConnectWallet() {
         ))}
       </ul>
 
-      {error && <p style={{ color: 'crimson' }}>{error}</p>}
+      {error && <p style={{ color: '#dc2626' }}>{error}</p>}
 
       {activeWallet && activeAddress && (
-        <p>
-          Active: <strong>{activeWallet.metadata.name}</strong> — <code>{activeAddress}</code>
+        <p style={{ color: 'var(--muted)' }}>
+          Active: <strong style={{ color: 'var(--text)' }}>{activeWallet.metadata.name}</strong> —{' '}
+          <code>{activeAddress}</code>
         </p>
       )}
     </div>

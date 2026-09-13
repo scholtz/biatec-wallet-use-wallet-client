@@ -6,61 +6,142 @@
     <title>Biatec Wallet × use-wallet example</title>
     <meta name="description" content="Minimal use-wallet v5 dApp using the Biatec Wallet adapter" />
     <style>
+      :root {
+        color-scheme: light dark;
+        --bg: #f1f5f9;
+        --bg-accent: #ecfeff;
+        --card-bg: rgba(255, 255, 255, 0.72);
+        --card-border: rgba(15, 23, 42, 0.08);
+        --text: #0f172a;
+        --muted: #64748b;
+        --accent: #0f766e;
+        --accent-soft: rgba(15, 118, 110, 0.12);
+        --shadow: 0 24px 60px rgba(15, 23, 42, 0.12);
+      }
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --bg: #0b1220;
+          --bg-accent: #0f172a;
+          --card-bg: rgba(255, 255, 255, 0.04);
+          --card-border: rgba(255, 255, 255, 0.08);
+          --text: #f1f5f9;
+          --muted: #94a3b8;
+          --accent: #2dd4bf;
+          --accent-soft: rgba(45, 212, 191, 0.14);
+          --shadow: 0 24px 60px rgba(0, 0, 0, 0.45);
+        }
+      }
+      * {
+        box-sizing: border-box;
+      }
       body {
-        font-family: system-ui, sans-serif;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
         max-width: 640px;
-        margin: 2rem auto;
+        margin: 3rem auto;
         padding: 0 1rem;
+        color: var(--text);
+        background:
+          radial-gradient(circle at 15% -10%, var(--bg-accent), transparent 55%), var(--bg);
+        background-attachment: fixed;
+        min-height: 100vh;
+      }
+      a {
+        color: var(--accent);
+      }
+      .card {
+        background: var(--card-bg);
+        backdrop-filter: blur(20px) saturate(180%);
+        -webkit-backdrop-filter: blur(20px) saturate(180%);
+        border: 1px solid var(--card-border);
+        border-radius: 24px;
+        box-shadow: var(--shadow);
+        padding: 2rem;
       }
       button {
         padding: 0.5rem 1rem;
         margin-right: 0.5rem;
+        border: none;
+        border-radius: 999px;
+        background: var(--accent);
+        color: #fff;
+        font-weight: 600;
+        font-size: 0.85rem;
+        cursor: pointer;
+      }
+      select {
+        border-radius: 8px;
+        padding: 0.3rem;
       }
       pre {
-        background: #f3f3f3;
+        background: var(--accent-soft);
+        color: var(--text);
         padding: 1rem;
+        border-radius: 12px;
         overflow-x: auto;
       }
       dialog {
         border: none;
-        border-radius: 12px;
+        border-radius: 20px;
         padding: 1.5rem;
-        max-width: 320px;
+        max-width: 340px;
         width: 90%;
         text-align: center;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+        color: var(--text);
+        background: var(--card-bg);
+        backdrop-filter: blur(28px) saturate(180%);
+        -webkit-backdrop-filter: blur(28px) saturate(180%);
+        border: 1px solid var(--card-border);
+        box-shadow: var(--shadow);
       }
       dialog::backdrop {
-        background: rgba(0, 0, 0, 0.5);
+        background: rgba(15, 23, 42, 0.45);
+        backdrop-filter: blur(6px);
+      }
+      dialog .qr-tile {
+        width: 220px;
+        height: 220px;
+        margin: 0 auto;
+        padding: 10px;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.18);
+        display: grid;
+        place-items: center;
       }
       dialog img {
-        width: 280px;
-        height: 280px;
+        width: 100%;
+        height: 100%;
       }
       dialog button {
         display: block;
         width: 100%;
         margin: 0.5rem 0 0;
       }
+      dialog #wc-cancel {
+        background: transparent;
+        color: var(--muted);
+      }
     </style>
   </head>
   <body>
-    <h1>Biatec Wallet × use-wallet</h1>
-    <p>
-      <label
-        >Network
-        <select id="network"></select
-      ></label>
-    </p>
-    <p>
-      <button id="connect">Connect Biatec Wallet</button>
-      <button id="disconnect" hidden>Disconnect</button>
-    </p>
-    <p>
-      <button id="sign-txn" hidden>Sign 0 ALGO self-payment</button>
-      <button id="sign-data" hidden>Sign data (ARC-0060)</button>
-    </p>
-    <pre id="log"></pre>
+    <div class="card">
+      <h1 style="margin-top: 0; font-size: 1.4rem">Biatec Wallet × use-wallet</h1>
+      <p style="color: var(--muted)">
+        <label
+          >Network
+          <select id="network"></select
+        ></label>
+      </p>
+      <p>
+        <button id="connect">Connect Biatec Wallet</button>
+        <button id="disconnect" hidden>Disconnect</button>
+      </p>
+      <p>
+        <button id="sign-txn" hidden>Sign 0 ALGO self-payment</button>
+        <button id="sign-data" hidden>Sign data (ARC-0060)</button>
+      </p>
+      <pre id="log"></pre>
+    </div>
 
     <!--
       Minimal pairing UI: just a QR code and a copy button — no wallet explorer, no "get a
@@ -70,8 +151,8 @@
       picker (choose WalletConnect vs. Liquid Auth) still appears first.
     -->
     <dialog id="wc-dialog">
-      <h2 id="wc-title" style="margin: 0 0 0.75rem; font-size: 1.1rem">Scan with Biatec Wallet</h2>
-      <img id="wc-qr" alt="Pairing QR code" />
+      <h2 id="wc-title" style="margin: 0 0 1rem; font-size: 1.05rem">Scan with Biatec Wallet</h2>
+      <div class="qr-tile"><img id="wc-qr" alt="Pairing QR code" /></div>
       <button id="wc-copy" type="button">Copy connection string</button>
       <button id="wc-cancel" type="button">Cancel</button>
     </dialog>

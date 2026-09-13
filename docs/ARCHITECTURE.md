@@ -37,24 +37,34 @@ adapter's constructor: bound references to `this.store`, `this.logger`, `this.ad
 mutate adapter state entirely through this context — they never touch `BaseWallet` internals
 directly, since only the outer adapter is allowed to extend `BaseWallet`.
 
-### Unified `connect()` and the method picker
+### Unified `connect()` and the connect dialog
 
 ```ts
 connect(args?: { method?: 'walletconnect' | 'liquid' })
 ```
 
-- `args.method` given → skip straight to that transport.
-- No `args`, both transports enabled → `src/method-picker-dialog.ts`'s `openMethodPickerDialog()`
-  shows a small vanilla-DOM dialog (Biatec logo, "Connect with WalletConnect" / "Connect with
-  Liquid Auth (Passkey)", Cancel) and resolves with the user's choice, or rejects if cancelled.
-- No `args`, Liquid disabled (`liquid: false`) → always WalletConnect, no picker.
+- `args.method` given → skip the dialog's method selector, connect with that transport directly
+  (the dialog still appears to show its QR/link, unless `onDisplayUri` is set).
+- No `args`, both transports enabled → `src/connect-dialog.ts`'s `openConnectDialog()` shows a
+  single modern dialog: a method selector (WalletConnect / Liquid Auth) on one side, and the
+  pairing QR code / link for whichever method is selected on the other. WalletConnect is
+  selected — and its `connect()` kicked off — immediately when the dialog opens, so its QR is
+  visible without an extra click; switching to the Liquid Auth tab lazily starts that transport's
+  `connect()` the first time it's selected and shows its QR once ready. Whichever method the user
+  actually completes wins; the adapter tears down the other transport's still-pending attempt.
+  Cancelling (✕, backdrop click, Escape, or the dialog rejecting both attempts) rejects
+  `connect()`.
+- No `args`, Liquid disabled (`liquid: false`) → always WalletConnect, no selector shown — the
+  dialog still appears (unless `onDisplayUri` is set) with only the QR/link content.
 
 Whichever transport is chosen calls back into the adapter's `onDisplayUri` (if the consumer
 supplied one) with a `BiatecDisplayUriInfo` (`{ method, requestId?, origin? }`) — enough to label
-a custom QR dialog per transport — or, if none was supplied, opens
-`openUriDisplayDialog()` (the same module) as the default "here's your link" UI for both
-transports. `useWalletConnectModal: true` opts back into `@walletconnect/modal`'s wallet-explorer
-modal for the WalletConnect step specifically.
+a custom QR dialog per transport. When `onDisplayUri` is set, the built-in dialog renders in
+"picker-only" mode: it still shows the method selector (when both transports are enabled) but no
+content, and closes itself the moment a method is picked, handing off entirely to the consumer's
+own UI for that method's URI. `useWalletConnectModal: true` opts back into
+`@walletconnect/modal`'s wallet-explorer modal for the WalletConnect step specifically (bypassing
+both the built-in dialog's content panel and `onDisplayUri` for that one tab).
 
 Every persisted `WalletAccount` is tagged with `BiatecAccountMetadata` — `{ method:
 'walletconnect' }` or `{ method: 'liquid', requestId, origin }` — so `resumeSession()` can read
@@ -231,8 +241,9 @@ sequenceDiagram
   from the persisted `{ method: 'liquid', requestId, origin }` metadata and calls
   `LiquidTransport.resume()`, which just remembers the pairing; re-pairing happens lazily on the
   first `signTransactions`/`signData` call, because a WebRTC channel cannot survive a reload.
-- `src/method-picker-dialog.ts` — dependency-free dialog (copy link) used as the default "here's
-  your link" UI when no `onDisplayUri` is given, shared with the WalletConnect transport.
+- `src/connect-dialog.ts` — the built-in dialog (method selector + QR/link content, lazy `qrcode`
+  import) used as the default UI when no `onDisplayUri` is given, shared with the WalletConnect
+  transport.
 
 The full protocol, its security model and the service deployment constraints are in
 [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).

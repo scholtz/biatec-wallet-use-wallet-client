@@ -277,11 +277,13 @@ biatec({
 })
 ```
 
-With both transports enabled, calling `wallet.connect()` with no arguments shows a built-in
-picker (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth (Passkey)"). To
-build your own picker instead, call `wallet.connect({ method: 'liquid' })` or
-`wallet.connect({ method: 'walletconnect' })` directly and skip the built-in one. To disable
-Liquid Auth entirely and always go straight to WalletConnect, pass `liquid: false`.
+With both transports enabled, calling `wallet.connect()` with no arguments shows a built-in,
+dark/light-aware dialog: a method selector (WalletConnect / Liquid Auth) next to a live QR code
+for whichever one is selected. WalletConnect is selected by default so its QR shows immediately;
+clicking the Liquid Auth tab connects that transport and shows its QR instead. To build your own
+picker, call `wallet.connect({ method: 'liquid' })` or `wallet.connect({ method: 'walletconnect' })`
+directly and skip the built-in one. To disable Liquid Auth entirely and always go straight to
+WalletConnect, pass `liquid: false`.
 
 Once connected, the user opens Biatec Wallet → Connect → Liquid Auth (or scans the QR your
 `onDisplayUri` renders), pastes/scans the link, and approves with a passkey; `connect()` resolves

@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { ScopeType, useWallet } from '@txnlab/use-wallet-react'
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 
 /**
  * Demonstrates the two things a connected wallet can do through use-wallet:
@@ -60,17 +60,41 @@ export function SignActions() {
     }
   }
 
+  const button: CSSProperties = {
+    padding: '0.5rem 1rem',
+    borderRadius: 999,
+    border: 'none',
+    background: 'var(--accent)',
+    color: '#fff',
+    fontWeight: 600,
+    fontSize: '0.85rem',
+    cursor: 'pointer'
+  }
+
   return (
     <div>
       <div style={{ display: 'flex', gap: '0.5rem' }}>
-        <button onClick={handleSignTransaction} disabled={busy}>
+        <button style={button} onClick={handleSignTransaction} disabled={busy}>
           Sign 0 ALGO self-payment
         </button>
-        <button onClick={handleSignData} disabled={busy || !activeWallet.canSignData}>
+        <button
+          style={{ ...button, opacity: !activeWallet.canSignData ? 0.5 : 1 }}
+          onClick={handleSignData}
+          disabled={busy || !activeWallet.canSignData}
+        >
           Sign data (ARC-0060)
         </button>
       </div>
-      <pre style={{ background: '#f3f3f3', padding: '1rem', marginTop: '1rem', overflowX: 'auto' }}>
+      <pre
+        style={{
+          background: 'var(--accent-soft)',
+          color: 'var(--text)',
+          borderRadius: 12,
+          padding: '1rem',
+          marginTop: '1rem',
+          overflowX: 'auto'
+        }}
+      >
         {log.join('\n') || '// output appears here'}
       </pre>
     </div>

@@ -43,7 +43,7 @@ import {
   type SignTransactionsResult
 } from '../liquid/protocol'
 import { LiquidSignalClient, withTimeout, type LiquidPeerSession } from '../liquid/signaling'
-import type { BiatecAccountMetadata, DialogHandle, TransportContext } from './types'
+import type { BiatecAccountMetadata, TransportContext } from './types'
 
 export interface LiquidTransportOptions {
   /** Liquid Auth service the wallet authenticates against. Default: Biatec's hosted service. */
@@ -65,10 +65,10 @@ export interface LiquidTransportOptions {
 }
 
 export interface LiquidConnectHandlers {
-  /** Pre-bound to include `{ method: 'liquid' }`; overrides the built-in dialog. */
-  onDisplayUri?: (uri: string, info: { requestId: string; origin: string }) => void | Promise<void>
-  /** Used when there's no `onDisplayUri`. */
-  openFallbackDialog: (uri: string, onCancel: () => void) => DialogHandle
+  /** Reports the `liquid://` pairing link. */
+  onDisplayUri: (uri: string, info: { requestId: string; origin: string }) => void | Promise<void>
+  /** Rejects the pending connect() promptly if aborted (e.g. the user cancelled the dialog). */
+  signal?: AbortSignal
 }
 
 interface PendingRequest {
@@ -139,16 +139,15 @@ export class LiquidTransport {
     const cancelled = new Promise<never>((_, reject) => {
       cancel = () => reject(new LiquidProviderError('Pairing cancelled', LiquidErrorCode.cancelled))
     })
+    if (handlers.signal) {
+      if (handlers.signal.aborted) cancel?.()
+      else handlers.signal.addEventListener('abort', () => cancel?.(), { once: true })
+    }
     const pairing = signal.pair(requestId, this.connectTimeoutMs)
     pairing.catch(() => undefined) // surfaced through the race below
 
-    let dialog: DialogHandle | undefined
     try {
-      if (handlers.onDisplayUri) {
-        await handlers.onDisplayUri(uri, { requestId, origin: this.origin })
-      } else {
-        dialog = handlers.openFallbackDialog(uri, () => cancel?.())
-      }
+      await handlers.onDisplayUri(uri, { requestId, origin: this.origin })
       const session = await Promise.race([pairing, cancelled])
       this.attachSession(session, requestId)
       const accounts = this.storeAccounts(session.wallet, requestId)
@@ -159,8 +158,6 @@ export class LiquidTransport {
       this.ctx.logger.error('Error connecting:', error?.message ?? error)
       this.teardownSession()
       throw error
-    } finally {
-      dialog?.close()
     }
   }
 
