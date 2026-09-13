@@ -143,3 +143,41 @@ level (`vi.mock`) and drives the adapter through `@txnlab/use-wallet/testing`'s
 without needing a full `WalletManager`. This exercises the actual store-mutation logic (accounts
 get de-duplicated and persisted correctly) while keeping the WalletConnect network layer
 deterministic and instant. See [CONTRIBUTING.md](../CONTRIBUTING.md#tests) for how to extend it.
+
+## Liquid Auth transport
+
+`src/liquid/` is a second, independent adapter (`BiatecLiquidAdapter`, id `biatec-liquid`) that
+replaces the WalletConnect relay with the Algorand Foundation's Liquid Auth flow:
+
+```mermaid
+sequenceDiagram
+    participant App as dApp
+    participant Adapter as BiatecLiquidAdapter
+    participant Service as Liquid Auth service
+    participant Wallet as Biatec Wallet
+
+    App->>Adapter: connect()
+    Adapter->>Adapter: requestId = UUID, liquid:// link → onDisplayUri / dialog
+    Adapter->>Service: socket.io link{requestId} + arm offer listener
+    Wallet->>Service: passkey attestation/assertion + liquid extension {address, requestId}
+    Service-->>Adapter: link ack {wallet}
+    Wallet->>Service: offer-description / offer-candidate
+    Service-->>Adapter: relayed
+    Adapter->>Service: answer-description / answer-candidate
+    Wallet-->>Adapter: RTCDataChannel "liquid" open
+    Adapter->>Wallet: biatec:hello:request
+    Adapter-->>App: WalletAccount[] (address from the link ack)
+```
+
+- `protocol.ts` — pure wire format (ARC-0027 envelope, CBOR via a lazy `cbor-x` import,
+  base64url, deep links). Mirrored verbatim in the wallet repository.
+- `signaling.ts` — `LiquidSignalClient`: the answer-role subset of the Liquid Auth signaling
+  protocol over `socket.io-client` (lazy import, websocket transport, `withCredentials`).
+- `adapter.ts` — session lifecycle, request/response correlation with timeouts, ARC-0001 and
+  ARC-0060 mapping. `resumeSession()` restores the account from the persisted
+  `{ requestId, origin }` metadata and re-pairs lazily on the first request, because a WebRTC
+  channel cannot survive a reload.
+- `dialog.ts` — dependency-free fallback dialog (copy link) when no `onDisplayUri` is given.
+
+The full protocol, its security model and the service deployment constraints are in
+[LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).

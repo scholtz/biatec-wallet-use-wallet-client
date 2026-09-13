@@ -93,6 +93,30 @@ pins an older `vite` (6.x/7.x) alongside a newer `@vitejs/plugin-react`, bump `v
 [`examples/react-ts/package.json`](../examples/react-ts/package.json) for versions known to work
 together.
 
+## Liquid Auth: `Cannot reach Liquid Auth service`
+
+The adapter could not open the socket.io connection to `origin` (default
+`https://liquid.biatec.io`). Check the URL, that the service is up, and that your CSP
+`connect-src` allows both `https://` and `wss://` to that host.
+
+## Liquid Auth: `Timed out after … waiting for Biatec Wallet to connect`
+
+Nobody completed the passkey link for the shown `requestId` within `connectTimeoutMs`
+(5 min default). The wallet must scan/paste the **same** link; if the wallet reports a passkey
+error, the service's RP ID / origin do not match the wallet's domain — see
+[LIQUID_AUTH_PROTOCOL.md § 6](LIQUID_AUTH_PROTOCOL.md#6-service-deployment-requirements-for-operators).
+
+## Liquid Auth: `Biatec Wallet is not reachable … Open Biatec Wallet` (code 4002)
+
+After a page reload the adapter re-pairs lazily on the first signing request and waits
+`reconnectTimeoutMs` (30 s) for the wallet, which must still be open on the Connect page with
+the session listed. Otherwise disconnect and connect again.
+
+## Liquid Auth: channel connects but signing hangs
+
+Both peers are behind symmetric NATs and STUN alone cannot find a path — pass `iceServers`
+with a TURN server. The WebRTC connection state is visible via `adapter.isChannelOpen`.
+
 ## Still stuck?
 
 - Re-read [ARCHITECTURE.md](ARCHITECTURE.md) for how the pieces fit together.

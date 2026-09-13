@@ -255,6 +255,29 @@ nothing else), see:
 Both call `navigator.clipboard.writeText(uri)` for the copy button — that API requires a secure
 context (`https://` or `localhost`), which any real deployment already has.
 
+## 9. Optional: Liquid Auth transport
+
+If you prefer a passkey-linked, peer-to-peer connection without a WalletConnect relay (or no
+WalletConnect project id at all), register the Liquid Auth adapter — alone or next to `biatec()`:
+
+```ts
+import { biatecLiquid } from 'biatec-wallet-use-wallet-client'
+
+const walletManager = new WalletManager({
+  wallets: [
+    biatecLiquid({
+      onDisplayUri: (uri) => showMyQrDialog(uri) // encodes liquid://liquid.biatec.io/?requestId=…
+    })
+  ]
+})
+```
+
+The user opens Biatec Wallet → Connect → Liquid Auth, scans/pastes the link and approves with a
+passkey; `connect()` resolves with the linked account. Everything else (`signTransactions`,
+`signData`, network switching) is identical. Read
+[docs/LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md) for how it works and what the service
+deployment needs.
+
 ## Next steps
 
 - [docs/API.md](API.md) — full option/method reference.
