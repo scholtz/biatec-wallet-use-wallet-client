@@ -64,6 +64,13 @@ export interface BiatecWalletOptions extends WalletConnectTransportOptions {
    * `connect()` always uses WalletConnect and skips the method picker.
    */
   liquid?: LiquidTransportOptions | false
+  /**
+   * BCP-47 language tag (e.g. `'sk'`, `'de-DE'`) to force the built-in dialog's language.
+   * Defaults to the browser's own language, falling back to English when it isn't one of the
+   * languages Biatec Wallet ships (see `SUPPORTED_LOCALES` exported from this package). Has no
+   * effect when `onDisplayUri` replaces the dialog's content entirely.
+   */
+  locale?: string
 }
 
 export interface ConnectArgs {
@@ -75,6 +82,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
   private readonly walletConnect: WalletConnectTransport
   private readonly liquid: LiquidTransport | null
   private readonly userOnDisplayUri: BiatecWalletOptions['onDisplayUri']
+  private readonly locale: string | undefined
   private activeMethod: BiatecMethod | null = null
 
   constructor(params: AdapterConstructorParams<BiatecWalletOptions>) {
@@ -85,9 +93,16 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       throw new Error('Missing required option: projectId')
     }
 
-    const { onDisplayUri, liquid, enableSignData = true, ...walletConnectOptions } = this.options
+    const {
+      onDisplayUri,
+      liquid,
+      locale,
+      enableSignData = true,
+      ...walletConnectOptions
+    } = this.options
 
     this.userOnDisplayUri = onDisplayUri
+    this.locale = locale
     this.canSignData = enableSignData
 
     const ctx = this.buildTransportContext()
@@ -219,6 +234,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
         methods,
         defaultMethod,
         showContent,
+        ...(this.locale ? { locale: this.locale } : {}),
         onSelectMethod: (method) => attempt(method),
         onCancel: () => {
           if (settled) return

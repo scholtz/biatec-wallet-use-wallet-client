@@ -27,7 +27,11 @@ import {
   BIATEC_CAIP_CHAIN_IDS,
   BIATEC_EXTRA_NETWORKS,
   BiatecNetworkId,
-  caipChainIdFromGenesisHash
+  caipChainIdFromGenesisHash,
+  SUPPORTED_LOCALES,
+  DEFAULT_LOCALE,
+  BiatecLocale,
+  resolveLocale
 } from 'biatec-wallet-use-wallet-client'
 
 // SignDataError and ScopeType are NOT re-exported by this package — they're generic
@@ -74,6 +78,7 @@ Passed straight through to the adapter constructor. Shared by both transports.
 | `enableSignData` | `boolean`                                                            | `true`                                   | no       | Set `false` to disable `signData()` on both transports.                                                                                                                                                         |
 | `chains`         | `string[]`                                                           | `[]`                                     | no       | WalletConnect only: extra CAIP-2 ids requested as optional chains, beyond every network already configured on the `WalletManager`.                                                                              |
 | `liquid`         | `BiatecLiquidTransportOptions \| false`                              | `{}` (enabled, Biatec defaults)          | no       | Liquid Auth transport configuration, or `false` to disable it — see [`BiatecLiquidTransportOptions`](#biatecliquidtransportoptions) below.                                                                      |
+| `locale`         | `string` (BCP-47, e.g. `'sk'`, `'de-DE'`)                            | browser language, falling back to `'en'` | no       | Forces the built-in dialog's language. See [Localization](#localization) below. No effect once `onDisplayUri` replaces the dialog's content.                                                                    |
 
 ### `BiatecLiquidTransportOptions`
 
@@ -86,6 +91,28 @@ Passed straight through to the adapter constructor. Shared by both transports.
 | `connectTimeoutMs`   | `number`                                     | `300000`                                                 | How long `connect()` waits for the wallet to pair.                                          |
 | `reconnectTimeoutMs` | `number`                                     | `30000`                                                  | How long a lazy reconnect (after a reload) waits for the wallet before failing with `4002`. |
 | `requestTimeoutMs`   | `number`                                     | `300000`                                                 | How long a signing request waits for the user's answer.                                     |
+
+### Localization
+
+The built-in dialog is translated into every language Biatec Wallet itself ships:
+
+```ts
+const SUPPORTED_LOCALES = ['af', 'cs', 'en', 'es', 'hu', 'it', 'nl', 'ru', 'sk', 'tr']
+```
+
+(Afrikaans, Czech, English, Spanish, Hungarian, Italian, Dutch, Russian, Slovak, Turkish — see
+[`src/locales/`](https://github.com/scholtz/wallet/tree/master/src/locales) in the wallet's own
+repo.) By default the dialog auto-detects the browser's language (`navigator.languages`) and
+falls back to English for anything else; pass `locale` on `biatec({ ... })` to force one:
+
+```ts
+biatec({ projectId, locale: 'sk' })
+```
+
+`SUPPORTED_LOCALES`, `DEFAULT_LOCALE` (`'en'`), and `resolveLocale(preferred?)` (the same
+resolution logic the dialog uses — an explicit tag or list of tags, falling back to the
+browser's language) are exported if you want to build a language switcher of your own that stays
+in sync, e.g. to label it with each language's native name.
 
 ### `BiatecDisplayUriInfo`
 

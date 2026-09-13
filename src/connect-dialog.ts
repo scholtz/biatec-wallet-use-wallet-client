@@ -4,31 +4,17 @@
  * code / link for whichever method is selected on the right — defaulting to WalletConnect when
  * both are enabled. Supports light and dark mode via `prefers-color-scheme`, and also respects
  * an explicit `data-theme="dark"` / `data-theme="light"` attribute on `<html>` if the host page
- * sets one (e.g. from its own theme toggle) — that always wins over the system preference. No
- * framework dependency; a lazy `qrcode` import renders the QR only while the dialog is open.
+ * sets one (e.g. from its own theme toggle) — that always wins over the system preference.
+ * Localized into every language Biatec Wallet itself ships (see `src/i18n.ts`), auto-detected
+ * from the browser or overridable via the `locale` option. No framework dependency; a lazy
+ * `qrcode` import renders the QR only while the dialog is open.
  */
 import { icon } from './icon'
 import { BIATEC_WALLET_URL } from './adapter-constants'
+import { resolveLocale, TRANSLATIONS, formatMethod } from './i18n'
 import type { BiatecMethod, DialogHandle } from './transports/types'
 
 const STYLE_ID = 'biatec-connect-dialog-styles'
-
-const METHOD_LABEL: Record<BiatecMethod, string> = {
-  walletconnect: 'WalletConnect',
-  liquid: 'Liquid Auth'
-}
-
-const METHOD_HINT: Record<BiatecMethod, string> = {
-  walletconnect: 'Relay-based pairing',
-  liquid: 'Peer-to-peer, passkey'
-}
-
-const METHOD_INSTRUCTIONS: Record<BiatecMethod, string> = {
-  walletconnect:
-    'Open <strong>Biatec Wallet</strong> on your phone, tap the scan icon, and point your camera at this code.',
-  liquid:
-    'Open <strong>Biatec Wallet</strong>, choose <strong>Liquid Auth</strong>, and scan this code. You’ll approve the connection with your device passkey — no relay server involved.'
-}
 
 const METHOD_ICON: Record<BiatecMethod, string> = {
   walletconnect: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 9.9c3-2.9 7.9-2.9 10.9 0l.4.3a.4.4 0 0 1 0 .6l-1.2 1.2a.2.2 0 0 1-.3 0l-.5-.5c-2.1-2-5.5-2-7.6 0l-.6.5a.2.2 0 0 1-.3 0L6.1 10.8a.4.4 0 0 1 0-.6zm13.5 2.5 1 1a.4.4 0 0 1 0 .6l-4.7 4.6a.4.4 0 0 1-.6 0l-3.3-3.3a.1.1 0 0 0-.2 0l-3.3 3.3a.4.4 0 0 1-.6 0L3.6 14a.4.4 0 0 1 0-.6l1-1a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0z" fill="currentColor"/></svg>`,
@@ -72,6 +58,12 @@ export interface ConnectDialogOptions {
    * is chosen, handing off to the consumer's own UI.
    */
   showContent: boolean
+  /**
+   * BCP-47 language tag (e.g. `'sk'`, `'sk-SK'`) to force the dialog's language. Defaults to
+   * the browser's own language (`navigator.languages`), falling back to English when it isn't
+   * one of the languages Biatec Wallet ships (see `SUPPORTED_LOCALES` in `src/i18n.ts`).
+   */
+  locale?: string
   /** Fired the first time a method is selected (either the default, or a manual tab click). */
   onSelectMethod: (method: BiatecMethod) => void
   onCancel: () => void
@@ -86,6 +78,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   injectStylesOnce()
 
   const { methods, showContent } = options
+  const i18n = TRANSLATIONS[resolveLocale(options.locale)]
   const showPicker = methods.length > 1
   let selected = options.defaultMethod
   const states = new Map<BiatecMethod, ConnectMethodState>()
@@ -95,7 +88,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   overlay.className = 'bcd-overlay'
   overlay.setAttribute('role', 'dialog')
   overlay.setAttribute('aria-modal', 'true')
-  overlay.setAttribute('aria-label', 'Connect Biatec Wallet')
+  overlay.setAttribute('aria-label', i18n.title)
 
   const panel = document.createElement('div')
   panel.className = 'bcd-panel'
@@ -144,12 +137,12 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   }
 
   panel.innerHTML = `
-    <button type="button" class="bcd-close" aria-label="Cancel">${CLOSE_ICON}</button>
+    <button type="button" class="bcd-close" aria-label="${escapeHtml(i18n.cancel)}">${CLOSE_ICON}</button>
     <div class="bcd-header">
       <div class="bcd-logo">${icon}</div>
       <div>
-        <h2 class="bcd-title">Connect Biatec Wallet</h2>
-        ${showPicker ? '<p class="bcd-subtitle">Pick a method, then scan the code</p>' : ''}
+        <h2 class="bcd-title">${escapeHtml(i18n.title)}</h2>
+        ${showPicker ? `<p class="bcd-subtitle">${escapeHtml(i18n.subtitle)}</p>` : ''}
       </div>
     </div>
     <div class="bcd-body">
@@ -181,8 +174,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
           <button type="button" class="bcd-method${method === selected ? ' bcd-method--active' : ''}" data-method="${method}" role="tab" aria-selected="${method === selected}">
             <span class="bcd-method-icon">${METHOD_ICON[method]}</span>
             <span class="bcd-method-text">
-              <span class="bcd-method-label">${METHOD_LABEL[method]}</span>
-              <span class="bcd-method-hint">${METHOD_HINT[method]}</span>
+              <span class="bcd-method-label">${escapeHtml(i18n.methodLabel[method])}</span>
+              <span class="bcd-method-hint">${escapeHtml(i18n.methodHint[method])}</span>
             </span>
             <span class="bcd-dot ${dotClass}"></span>
           </button>`
@@ -205,23 +198,24 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   function renderContent(): void {
     if (!contentEl) return
     const state = states.get(selected)
+    const methodLabel = i18n.methodLabel[selected]
     if (!state || state.status === 'connecting') {
-      contentEl.innerHTML = `<div class="bcd-content-state"><div class="bcd-spinner"></div><p class="bcd-hint">Preparing ${METHOD_LABEL[selected]}…</p></div>`
+      contentEl.innerHTML = `<div class="bcd-content-state"><div class="bcd-spinner"></div><p class="bcd-hint">${escapeHtml(formatMethod(i18n.preparing, methodLabel))}</p></div>`
       return
     }
     if (state.status === 'error') {
-      contentEl.innerHTML = `<div class="bcd-content-state"><p class="bcd-error">${escapeHtml(state.error ?? 'Something went wrong.')}</p></div>`
+      contentEl.innerHTML = `<div class="bcd-content-state"><p class="bcd-error">${escapeHtml(state.error ?? i18n.genericError)}</p></div>`
       return
     }
     const uri = state.uri ?? ''
     contentEl.innerHTML = `
-      <h3 class="bcd-content-title">Connect with ${METHOD_LABEL[selected]}</h3>
-      <div class="bcd-qr-tile"><img class="bcd-qr" alt="Pairing QR code" /></div>
-      <p class="bcd-hint">${METHOD_INSTRUCTIONS[selected]}</p>
-      <input class="bcd-uri" readonly value="${escapeHtml(uri)}" aria-label="Pairing link" />
-      <button type="button" class="bcd-copy">Copy link</button>
-      <p class="bcd-footnote">Don’t have Biatec Wallet?
-        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">Get it here</a>
+      <h3 class="bcd-content-title">${escapeHtml(formatMethod(i18n.connectWith, methodLabel))}</h3>
+      <div class="bcd-qr-tile"><img class="bcd-qr" alt="${escapeHtml(i18n.pairingLink)}" /></div>
+      <p class="bcd-hint">${i18n.methodInstructions[selected]}</p>
+      <input class="bcd-uri" readonly value="${escapeHtml(uri)}" aria-label="${escapeHtml(i18n.pairingLink)}" />
+      <button type="button" class="bcd-copy">${escapeHtml(i18n.copyLink)}</button>
+      <p class="bcd-footnote">${escapeHtml(i18n.noWallet)}
+        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">${escapeHtml(i18n.getItHere)}</a>
       </p>
     `
     const img = contentEl.querySelector('.bcd-qr') as HTMLImageElement
@@ -236,8 +230,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     copyButton.onclick = async () => {
       try {
         await navigator.clipboard.writeText(uri)
-        copyButton.textContent = 'Copied!'
-        setTimeout(() => (copyButton.textContent = 'Copy link'), 2000)
+        copyButton.textContent = i18n.copied
+        setTimeout(() => (copyButton.textContent = i18n.copyLink), 2000)
       } catch {
         ;(contentEl.querySelector('.bcd-uri') as HTMLInputElement)?.select()
       }
@@ -261,6 +255,36 @@ function escapeHtml(value: string): string {
 
 const CLOSE_ICON = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
 
+// Theme tokens repeat across the default light palette, the `prefers-color-scheme: dark` media
+// query, and the explicit `data-theme` overrides (each direction must be able to beat system
+// preference) — kept as one block substituted into all three so they can't drift out of sync.
+const DARK_TOKENS = `
+    --bcd-overlay: rgba(2, 6, 12, 0.6);
+    --bcd-bg: rgba(24, 30, 42, 0.78);
+    --bcd-border: rgba(255, 255, 255, 0.08);
+    --bcd-text: #f1f5f9;
+    --bcd-muted: #94a3b8;
+    --bcd-accent: #2dd4bf;
+    --bcd-accent-contrast: #04302b;
+    --bcd-accent-soft: rgba(45, 212, 191, 0.16);
+    --bcd-surface: rgba(255, 255, 255, 0.05);
+    --bcd-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
+    --bcd-danger: #f87171;
+`
+const LIGHT_TOKENS = `
+  --bcd-overlay: rgba(15, 23, 42, 0.45);
+  --bcd-bg: rgba(255, 255, 255, 0.82);
+  --bcd-border: rgba(15, 23, 42, 0.08);
+  --bcd-text: #0f172a;
+  --bcd-muted: #64748b;
+  --bcd-accent: #0f766e;
+  --bcd-accent-contrast: #ffffff;
+  --bcd-accent-soft: rgba(15, 118, 110, 0.12);
+  --bcd-surface: rgba(255, 255, 255, 0.55);
+  --bcd-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.08);
+  --bcd-danger: #dc2626;
+`
+
 const CSS = `
 .bcd-overlay {
   position: fixed;
@@ -276,56 +300,20 @@ const CSS = `
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', system-ui, sans-serif;
   opacity: 0;
   transition: opacity 160ms ease;
-  --bcd-overlay: rgba(15, 23, 42, 0.45);
-  --bcd-bg: rgba(255, 255, 255, 0.82);
-  --bcd-border: rgba(15, 23, 42, 0.08);
-  --bcd-text: #0f172a;
-  --bcd-muted: #64748b;
-  --bcd-accent: #0f766e;
-  --bcd-accent-soft: rgba(15, 118, 110, 0.12);
-  --bcd-surface: rgba(255, 255, 255, 0.55);
-  --bcd-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.08);
-  --bcd-danger: #dc2626;
+  ${LIGHT_TOKENS}
 }
 @media (prefers-color-scheme: dark) {
   html:not([data-theme='light']) .bcd-overlay {
-    --bcd-overlay: rgba(2, 6, 12, 0.6);
-    --bcd-bg: rgba(24, 30, 42, 0.78);
-    --bcd-border: rgba(255, 255, 255, 0.08);
-    --bcd-text: #f1f5f9;
-    --bcd-muted: #94a3b8;
-    --bcd-accent: #2dd4bf;
-    --bcd-accent-soft: rgba(45, 212, 191, 0.16);
-    --bcd-surface: rgba(255, 255, 255, 0.05);
-    --bcd-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
-    --bcd-danger: #f87171;
+    ${DARK_TOKENS}
   }
 }
 /* An explicit data-theme attribute on <html> (set by the host page's own light/dark toggle, if
    it has one) always wins over the system preference above, in either direction. */
 html[data-theme='dark'] .bcd-overlay {
-  --bcd-overlay: rgba(2, 6, 12, 0.6);
-  --bcd-bg: rgba(24, 30, 42, 0.78);
-  --bcd-border: rgba(255, 255, 255, 0.08);
-  --bcd-text: #f1f5f9;
-  --bcd-muted: #94a3b8;
-  --bcd-accent: #2dd4bf;
-  --bcd-accent-soft: rgba(45, 212, 191, 0.16);
-  --bcd-surface: rgba(255, 255, 255, 0.05);
-  --bcd-shadow: 0 24px 70px rgba(0, 0, 0, 0.55), 0 2px 8px rgba(0, 0, 0, 0.3);
-  --bcd-danger: #f87171;
+  ${DARK_TOKENS}
 }
 html[data-theme='light'] .bcd-overlay {
-  --bcd-overlay: rgba(15, 23, 42, 0.45);
-  --bcd-bg: rgba(255, 255, 255, 0.82);
-  --bcd-border: rgba(15, 23, 42, 0.08);
-  --bcd-text: #0f172a;
-  --bcd-muted: #64748b;
-  --bcd-accent: #0f766e;
-  --bcd-accent-soft: rgba(15, 118, 110, 0.12);
-  --bcd-surface: rgba(255, 255, 255, 0.55);
-  --bcd-shadow: 0 24px 70px rgba(15, 23, 42, 0.28), 0 2px 8px rgba(15, 23, 42, 0.08);
-  --bcd-danger: #dc2626;
+  ${LIGHT_TOKENS}
 }
 .bcd-overlay--visible { opacity: 1; }
 .bcd-overlay--visible .bcd-panel { transform: scale(1) translateY(0); opacity: 1; }
@@ -346,6 +334,17 @@ html[data-theme='light'] .bcd-overlay {
   transition: transform 180ms cubic-bezier(0.16, 1, 0.3, 1), opacity 180ms ease;
 }
 .bcd-panel--single { max-width: 380px; }
+/* More breathing room once there's room to give it — the picker+content layout otherwise looks
+   cramped on a typical desktop viewport. */
+@media (min-width: 640px) {
+  .bcd-panel:not(.bcd-panel--single) {
+    max-width: 560px;
+    padding: 2rem;
+  }
+  .bcd-panel:not(.bcd-panel--single) .bcd-body { gap: 2rem; }
+  .bcd-panel:not(.bcd-panel--picker-only):not(.bcd-panel--single) .bcd-methods { width: 196px; }
+  .bcd-panel:not(.bcd-panel--single) .bcd-header { margin-bottom: 1.5rem; }
+}
 .bcd-close {
   position: absolute;
   top: 0.9rem;
@@ -446,7 +445,7 @@ html[data-theme='light'] .bcd-overlay {
   border-radius: 10px;
   border: none;
   background: var(--bcd-accent);
-  color: #ffffff;
+  color: var(--bcd-accent-contrast);
   font-weight: 600;
   font-size: 0.85rem;
   cursor: pointer;

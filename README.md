@@ -145,7 +145,10 @@ When both transports are enabled (the default), `connect()` shows a modern, glas
 — a method selector (WalletConnect / Liquid Auth) next to a live QR code / link for whichever
 method is selected. WalletConnect is selected by default, so its QR is visible immediately;
 switching to the Liquid Auth tab connects that transport on demand. It follows the system's
-light/dark theme automatically. Skip the selector from your own UI with
+light/dark theme automatically (or an explicit `data-theme` on `<html>`, if your page sets one),
+and it's translated into every language Biatec Wallet itself ships — auto-detected from the
+browser, or force one with `biatec({ projectId, locale: 'sk' })` (see
+[Localization](docs/API.md#localization)). Skip the selector from your own UI with
 `connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })`, or disable Liquid Auth
 entirely with `biatec({ projectId, liquid: false })` so `connect()` always goes straight to
 WalletConnect.

@@ -71,6 +71,13 @@ export {
 } from './networks'
 export type { BiatecNetworkId } from './networks'
 
+// ---------- Connect dialog localization ------------------------------ //
+// The languages Biatec Wallet itself ships (see SUPPORTED_LOCALES) — useful if you want to
+// build a language switcher of your own and pass its value as `biatec({ locale })`.
+
+export { SUPPORTED_LOCALES, DEFAULT_LOCALE, resolveLocale } from './i18n'
+export type { BiatecLocale, BiatecTranslation } from './i18n'
+
 // ---------- Liquid Auth transport-level utilities -------------------- //
 // Useful for consumers building fully custom pairing UI; no adapter coupling.
 
