@@ -60,6 +60,14 @@ export function withTimeout<T>(promise: Promise<T>, ms: number, what: string): P
   })
 }
 
+// Memoized so the dynamic import only ever resolves once per process — cheaper on every
+// (re)connect attempt, and gives test suites that mock this specifier a single, deterministic
+// point where the mock must be in place, instead of one per `LiquidSignalClient` instance.
+let socketIoModule: Promise<typeof import('socket.io-client')> | null = null
+function loadSocketIo(): Promise<typeof import('socket.io-client')> {
+  return (socketIoModule ??= import('socket.io-client'))
+}
+
 export class LiquidSignalClient {
   private socket: Socket | null = null
   private readonly origin: string
@@ -74,7 +82,7 @@ export class LiquidSignalClient {
 
   async connect(): Promise<Socket> {
     if (this.socket) return this.socket
-    const { io } = await import('socket.io-client')
+    const { io } = await loadSocketIo()
     // websocket-only: the dApp is cross-site to the service, so no cookie survives between
     // polling requests; a single upgrade request keeps one express session for the socket.
     const socket = io(this.origin, {

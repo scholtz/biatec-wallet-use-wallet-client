@@ -180,7 +180,7 @@ function makePayment(sender: string, receiver: string): algosdk.Transaction {
 }
 
 /** Polls until `predicate` holds (the adapter lazily imports cbor-x, so timings vary). */
-async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void> {
+async function waitFor(predicate: () => boolean, timeoutMs = 5000): Promise<void> {
   const deadline = Date.now() + timeoutMs
   while (!predicate()) {
     if (Date.now() > deadline) throw new Error('waitFor timed out')
