@@ -35,7 +35,7 @@ jobs:
     needs: check
     strategy:
       matrix:
-        example: [vanilla-ts, react-ts]
+        example: [vanilla-ts, react-ts, vue-ts, solid-ts, svelte-ts]
     steps:
       - uses: actions/checkout@v4
 
@@ -49,7 +49,7 @@ jobs:
       - run: pnpm install --frozen-lockfile
       # Examples depend on the adapter via workspace:*, so it must be built first.
       - run: pnpm build
-      - run: pnpm --filter example-${{ matrix.example }} exec tsc --noEmit
+      - run: pnpm --filter example-${{ matrix.example }} run typecheck
       - run: pnpm --filter example-${{ matrix.example }} build
 
   e2e:

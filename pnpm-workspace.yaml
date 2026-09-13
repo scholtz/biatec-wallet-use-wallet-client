@@ -5,6 +5,7 @@ packages:
 allowBuilds:
   cbor-extract: false
   esbuild: true
+  vue-demi: true
 
 minimumReleaseAgeExclude:
   - '@types/node'
