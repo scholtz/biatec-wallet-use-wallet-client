@@ -116,16 +116,20 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     if (event.key === 'Escape') cancel()
   }
 
-  function select(method: BiatecMethod): void {
+  /** User clicked a method tab (or it's the initial default selection). */
+  function select(method: BiatecMethod, isInitial = false): void {
     selected = method
     renderMethods()
     if (!started.has(method)) {
       started.add(method)
-      options.onSelectMethod(method)
+      // The initial default selection is started explicitly by the caller right after this
+      // function returns (it needs the dialog handle, which doesn't exist yet while
+      // `openConnectDialog` is still constructing it) — only forward real tab clicks here.
+      if (!isInitial) options.onSelectMethod(method)
     }
     if (showContent) {
       renderContent()
-    } else {
+    } else if (!isInitial) {
       handle.close()
     }
   }
@@ -230,7 +234,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   }
 
   if (showPicker) renderMethods()
-  select(options.defaultMethod)
+  select(options.defaultMethod, true)
 
   document.body.appendChild(overlay)
   requestAnimationFrame(() => overlay.classList.add('bcd-overlay--visible'))

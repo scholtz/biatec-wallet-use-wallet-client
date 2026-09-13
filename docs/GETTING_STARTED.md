@@ -224,10 +224,9 @@ optional chain up front. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#multi-chain-
 
 ## 8. Custom QR UI (QR code + copy button only)
 
-By default `connect()` shows a built-in dialog with just the raw pairing/session link and a copy
-button (or, with `useWalletConnectModal: true`, the full WalletConnect modal — a QR code, "copy
-link", a wallet explorer, and other wallets' links). Pass `onDisplayUri` to receive the raw
-string yourself and render **only** a QR code and a copy button instead:
+By default `connect()` shows a built-in dialog with a QR code, the raw pairing/session link, and
+a copy button. Pass `onDisplayUri` to receive the raw string yourself and render your own UI
+instead:
 
 ```ts
 biatec({

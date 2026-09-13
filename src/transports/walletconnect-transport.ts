@@ -23,7 +23,6 @@ import {
   type WalletState,
   type WalletTransaction
 } from '@txnlab/use-wallet/adapter'
-import type { WalletConnectModal, WalletConnectModalConfig } from '@walletconnect/modal'
 import type SignClient from '@walletconnect/sign-client'
 import type { SessionTypes, SignClientTypes } from '@walletconnect/types'
 import { getWindowMetadata } from '../window-metadata'
@@ -37,17 +36,7 @@ export const DEFAULT_RELAY_URL = 'wss://relay.walletconnect.com'
 /** Session events Biatec Wallet declares when approving a session. */
 const SESSION_EVENTS = ['chainChanged', 'accountsChanged']
 
-export type ModalOptions = Pick<
-  WalletConnectModalConfig,
-  | 'enableExplorer'
-  | 'explorerRecommendedWalletIds'
-  | 'privacyPolicyUrl'
-  | 'termsOfServiceUrl'
-  | 'themeMode'
-  | 'themeVariables'
->
-
-export interface WalletConnectTransportOptions extends ModalOptions {
+export interface WalletConnectTransportOptions {
   /** WalletConnect Cloud project id (https://cloud.reown.com). Required. */
   projectId: string
   /** Relay URL. Defaults to the public WalletConnect relay. */
@@ -68,11 +57,6 @@ export interface WalletConnectTransportOptions extends ModalOptions {
    * The active network's chain is always requested as *required*.
    */
   chains?: string[]
-  /**
-   * Use `@walletconnect/modal`'s wallet-explorer modal as the pairing UI instead of the
-   * built-in Biatec dialog. Only applies when no `onDisplayUri` is given. Default `false`.
-   */
-  useWalletConnectModal?: boolean
 }
 
 export type SignTxnsResponse = Array<Uint8Array | number[] | string | null | undefined>
@@ -92,7 +76,7 @@ export interface WireStdSigData {
 export type SignDataResponse = Array<{ signature: string } | null | undefined>
 
 export interface WalletConnectConnectHandlers {
-  /** Reports the pairing URI (unless `useWalletConnectModal` is set, which shows its own UI). */
+  /** Reports the pairing URI. */
   onDisplayUri: (uri: string) => void | Promise<void>
   /** Rejects the pending connect() promptly if aborted (e.g. the user cancelled the dialog). */
   signal?: AbortSignal
@@ -100,7 +84,6 @@ export interface WalletConnectConnectHandlers {
 
 export class WalletConnectTransport {
   private client: SignClient | null = null
-  private modal: WalletConnectModal | null = null
   private session: SessionTypes.Struct | null = null
 
   private readonly clientOptions: {
@@ -108,8 +91,6 @@ export class WalletConnectTransport {
     relayUrl: string
     metadata: SignClientTypes.Metadata
   }
-  private readonly modalOptions: ModalOptions
-  private readonly useWalletConnectModal: boolean
   private readonly enableSignData: boolean
   private readonly extraChains: string[]
 
@@ -122,9 +103,7 @@ export class WalletConnectTransport {
       relayUrl = DEFAULT_RELAY_URL,
       metadata,
       enableSignData = true,
-      chains = [],
-      useWalletConnectModal = false,
-      ...modalOptions
+      chains = []
     } = options
 
     this.clientOptions = {
@@ -132,8 +111,6 @@ export class WalletConnectTransport {
       relayUrl,
       metadata: { ...getWindowMetadata(), ...metadata }
     }
-    this.modalOptions = modalOptions
-    this.useWalletConnectModal = useWalletConnectModal
     this.enableSignData = enableSignData
     this.extraChains = chains
   }
@@ -193,18 +170,6 @@ export class WalletConnectTransport {
     this.client = client
     this.ctx.logger.info('WalletConnect client initialized')
     return client
-  }
-
-  private async initializeModal(): Promise<WalletConnectModal> {
-    this.ctx.logger.info('Initializing WalletConnect modal...')
-    const { WalletConnectModal } = await import('@walletconnect/modal')
-    const modal = new WalletConnectModal({
-      projectId: this.clientOptions.projectId,
-      ...this.modalOptions
-    })
-    modal.subscribeModal((state) => this.ctx.logger.info(`Modal ${state.open ? 'open' : 'closed'}`))
-    this.modal = modal
-    return modal
   }
 
   private getClient(): Promise<SignClient> {
@@ -288,12 +253,7 @@ export class WalletConnectTransport {
         throw new Error('No URI found')
       }
 
-      if (this.useWalletConnectModal) {
-        const modal = this.modal ?? (await this.initializeModal())
-        await modal.openModal({ uri })
-      } else {
-        await handlers.onDisplayUri(uri)
-      }
+      await handlers.onDisplayUri(uri)
 
       const session = await raceAbort(approval(), handlers.signal)
       const walletAccounts = this.onSessionConnected(session)
@@ -302,8 +262,6 @@ export class WalletConnectTransport {
     } catch (error: any) {
       this.ctx.logger.error('Error connecting:', error?.message ?? error)
       throw error
-    } finally {
-      this.modal?.closeModal()
     }
   }
 

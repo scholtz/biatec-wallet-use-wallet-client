@@ -41,7 +41,6 @@ export {
   DEFAULT_RELAY_URL,
   SIGN_DATA_METHOD,
   SIGN_TXN_METHOD,
-  type ModalOptions,
   type SignDataResponse,
   type SignTxnsResponse,
   type WireStdSigData
@@ -51,12 +50,12 @@ export type { BiatecAccountMetadata, BiatecDisplayUriInfo, BiatecMethod } from '
 
 export interface BiatecWalletOptions extends WalletConnectTransportOptions {
   /**
-   * Called with the pairing/session URI instead of showing the built-in dialog's content (or
-   * the WalletConnect modal, if `useWalletConnectModal` is set). Use it to render your own QR
-   * code / deep link UI. `connect()` resolves once the wallet approves the connection, so
-   * you can close your UI then. `info.method` tells you which transport produced the URI. The
-   * built-in method picker still appears when both transports are enabled and no `method` was
-   * given to `connect()` — this option only replaces the content step, not the picker.
+   * Called with the pairing/session URI instead of showing the built-in dialog's content. Use
+   * it to render your own QR code / deep link UI. `connect()` resolves once the wallet approves
+   * the connection, so you can close your UI then. `info.method` tells you which transport
+   * produced the URI. The built-in method picker still appears when both transports are enabled
+   * and no `method` was given to `connect()` — this option only replaces the content step, not
+   * the picker.
    */
   onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
   /**

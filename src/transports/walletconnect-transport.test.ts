@@ -28,25 +28,14 @@ const mocks = vi.hoisted(() => {
       get: vi.fn()
     }
   }
-  const modal = {
-    openModal: vi.fn(),
-    closeModal: vi.fn(),
-    subscribeModal: vi.fn()
-  }
   return {
     signClient,
-    modal,
-    signClientInit: vi.fn(async () => signClient),
-    modalCtor: vi.fn(() => modal)
+    signClientInit: vi.fn(async () => signClient)
   }
 })
 
 vi.mock('@walletconnect/sign-client', () => ({
   SignClient: { init: mocks.signClientInit }
-}))
-
-vi.mock('@walletconnect/modal', () => ({
-  WalletConnectModal: mocks.modalCtor
 }))
 
 // ---------- Fixtures ----------------------------------------------- //
@@ -224,32 +213,13 @@ describe('BiatecWalletAdapter — WalletConnect transport', () => {
       expect(adapter.isConnected).toBe(true)
     })
 
-    it('opens and closes the WalletConnect modal when useWalletConnectModal is set', async () => {
-      const session = makeSession()
-      mocks.signClient.connect.mockResolvedValue({
-        uri: 'wc:uri',
-        approval: async () => session
-      })
-      const { adapter } = createAdapter({ useWalletConnectModal: true, themeMode: 'dark' })
-
-      await adapter.connect({ method: 'walletconnect' })
-
-      expect(mocks.modalCtor).toHaveBeenCalledWith({
-        projectId: 'test-project-id',
-        themeMode: 'dark'
-      })
-      expect(mocks.modal.openModal).toHaveBeenCalledWith({ uri: 'wc:uri' })
-      expect(mocks.modal.closeModal).toHaveBeenCalled()
-    })
-
-    it('hands the URI to onDisplayUri instead of the modal', async () => {
+    it('hands the URI to onDisplayUri', async () => {
       const onDisplayUri = vi.fn()
       await connectAdapter({ onDisplayUri })
 
       expect(onDisplayUri).toHaveBeenCalledWith('wc:abc@2?relay-protocol=irn&symKey=123', {
         method: 'walletconnect'
       })
-      expect(mocks.modalCtor).not.toHaveBeenCalled()
     })
 
     it('throws when the client returns no URI', async () => {

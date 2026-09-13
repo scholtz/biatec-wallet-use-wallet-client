@@ -128,18 +128,16 @@ new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
 
 `biatec(options)` accepts:
 
-| Option                                                                                                                   | Type                                                                 | Default                         | Description                                                                                                                                              |
-| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `projectId`                                                                                                              | `string`                                                             | **required**                    | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                    |
-| `relayUrl`                                                                                                               | `string`                                                             | `wss://relay.walletconnect.com` | WalletConnect relay.                                                                                                                                     |
-| `metadata`                                                                                                               | `SignClientTypes.Metadata`                                           | detected from the document      | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for both transports.                                                   |
-| `onDisplayUri`                                                                                                           | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                               | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves. |
-| `enableSignData`                                                                                                         | `boolean`                                                            | `true`                          | Expose `signData()` on both transports. Set `false` to advertise transaction signing only.                                                               |
-| `chains`                                                                                                                 | `string[]`                                                           | `[]`                            | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).          |
-| `liquid`                                                                                                                 | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults        | Liquid Auth transport config, or `false` to disable it and always use WalletConnect. See [docs/API.md](docs/API.md#biatecliquidtransportoptions).        |
-| `useWalletConnectModal`                                                                                                  | `boolean`                                                            | `false`                         | Use `@walletconnect/modal`'s wallet-explorer modal for the WalletConnect step instead of the built-in dialog.                                            |
-| `displayMetadata`                                                                                                        | `Partial<{ name; icon }>`                                            | Biatec name + logo              | Override how the wallet appears in your wallet picker.                                                                                                   |
-| `themeMode`, `themeVariables`, `enableExplorer`, `explorerRecommendedWalletIds`, `privacyPolicyUrl`, `termsOfServiceUrl` | see `@walletconnect/modal`                                           | –                               | Passed to the WalletConnect modal (only used when `useWalletConnectModal: true`).                                                                        |
+| Option            | Type                                                                 | Default                         | Description                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`       | `string`                                                             | **required**                    | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                    |
+| `relayUrl`        | `string`                                                             | `wss://relay.walletconnect.com` | WalletConnect relay.                                                                                                                                     |
+| `metadata`        | `SignClientTypes.Metadata`                                           | detected from the document      | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for both transports.                                                   |
+| `onDisplayUri`    | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                               | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves. |
+| `enableSignData`  | `boolean`                                                            | `true`                          | Expose `signData()` on both transports. Set `false` to advertise transaction signing only.                                                               |
+| `chains`          | `string[]`                                                           | `[]`                            | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).          |
+| `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults        | Liquid Auth transport config, or `false` to disable it and always use WalletConnect. See [docs/API.md](docs/API.md#biatecliquidtransportoptions).        |
+| `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo              | Override how the wallet appears in your wallet picker.                                                                                                   |
 
 ### Choosing a connection method
 
@@ -154,9 +152,9 @@ WalletConnect.
 
 ### Custom QR code instead of the built-in dialog
 
-The built-in dialog (or, with `useWalletConnectModal: true`, the WalletConnect modal) shows a
-generic "here's your link" UI — often less than a dApp wants. Pass `onDisplayUri` to receive the
-raw pairing/session string yourself and render **just** a QR code and a copy button:
+The built-in dialog already renders a QR code and copy button, styled to match your dApp's light
+or dark theme — most dApps don't need to replace it. Pass `onDisplayUri` if you want full control
+over rendering instead:
 
 ```ts
 biatec({
@@ -295,6 +293,7 @@ pnpm typecheck   # tsc
 pnpm lint        # eslint
 pnpm build       # tsdown -> dist/
 pnpm check       # everything, also run by prepublishOnly
+pnpm test:e2e    # playwright, against the built vanilla-ts example (run `pnpm build` first)
 ```
 
 Run an example dApp: see [examples/](examples) for a vanilla TypeScript and a React integration
@@ -305,7 +304,8 @@ Full contributor workflow, code style, and testing conventions: [CONTRIBUTING.md
 ### CI/CD
 
 - **CI** (`.github/workflows/ci.yml`) — on every push/PR: lint, typecheck, test, build, publint,
-  format check, and building both examples against the freshly built package.
+  format check, building both examples against the freshly built package, and a Playwright
+  end-to-end suite that clicks through the built-in connect dialog in a real browser.
 - **Release** (`.github/workflows/release.yml`) — [Changesets](https://github.com/changesets/changesets)-driven:
   merging a PR with a changeset opens an automatic "Version Packages" PR; merging _that_ publishes
   to npm with provenance and creates a GitHub release. No manual version bumps or `npm publish`.

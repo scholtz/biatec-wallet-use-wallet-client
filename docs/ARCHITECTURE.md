@@ -62,9 +62,7 @@ supplied one) with a `BiatecDisplayUriInfo` (`{ method, requestId?, origin? }`) 
 a custom QR dialog per transport. When `onDisplayUri` is set, the built-in dialog renders in
 "picker-only" mode: it still shows the method selector (when both transports are enabled) but no
 content, and closes itself the moment a method is picked, handing off entirely to the consumer's
-own UI for that method's URI. `useWalletConnectModal: true` opts back into
-`@walletconnect/modal`'s wallet-explorer modal for the WalletConnect step specifically (bypassing
-both the built-in dialog's content panel and `onDisplayUri` for that one tab).
+own UI for that method's URI.
 
 Every persisted `WalletAccount` is tagged with `BiatecAccountMetadata` — `{ method:
 'walletconnect' }` or `{ method: 'liquid', requestId, origin }` — so `resumeSession()` can read
@@ -87,12 +85,11 @@ sequenceDiagram
     Transport->>Transport: SignClient.init() (lazy import)
     Transport->>WC: client.connect({ requiredNamespaces, optionalNamespaces })
     WC-->>Transport: { uri, approval }
+    Transport->>Adapter: handlers.onDisplayUri(uri)
     alt onDisplayUri set
-        Transport->>App: onDisplayUri(uri)
-    else useWalletConnectModal
-        Transport->>Transport: open WalletConnect modal with uri
+        Adapter->>App: onDisplayUri(uri, info)
     else default
-        Transport->>Transport: open built-in URI dialog
+        Adapter->>Adapter: update built-in dialog's content panel
     end
     App-->>Biatec: user scans / pastes uri
     Biatec->>WC: approve session
@@ -108,10 +105,9 @@ sequenceDiagram
   keeps the adapter compatible with any wallet version; the optional namespace is what lets a
   single session cover multiple chains and ARC-0060 without a second approval prompt — see
   [Multi-chain sessions](#multi-chain-sessions) below.
-- `SignClient` and `WalletConnectModal` are dynamically `import()`ed inside `connect()` /
-  `resumeSession()`, never at module load. This keeps the adapter importable in SSR / test
-  environments where `window` doesn't exist, and defers ~150 KB of WalletConnect code until a user
-  actually tries to connect.
+- `SignClient` is dynamically `import()`ed inside `connect()` / `resumeSession()`, never at module
+  load. This keeps the adapter importable in SSR / test environments where `window` doesn't
+  exist, and defers ~150 KB of WalletConnect code until a user actually tries to connect.
 - On success, accounts come from `session.namespaces.algorand.accounts` — CAIP-10 strings like
   `algorand:SGO1GKSzy...:ABCD...`. The same address can appear once per approved chain; the
   adapter de-duplicates by address before storing them.

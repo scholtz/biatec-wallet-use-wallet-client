@@ -38,13 +38,12 @@ describe('biatec factory', () => {
 
   it('passes adapter-specific options through untouched', () => {
     const onDisplayUri = () => undefined
-    const config = biatec({ projectId, onDisplayUri, enableSignData: false, themeMode: 'light' })
+    const config = biatec({ projectId, onDisplayUri, enableSignData: false })
 
     expect(config.options).toEqual({
       projectId,
       onDisplayUri,
-      enableSignData: false,
-      themeMode: 'light'
+      enableSignData: false
     })
   })
 

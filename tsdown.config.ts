@@ -13,11 +13,11 @@ export default defineConfig({
       'algosdk',
       '@txnlab/use-wallet',
       '@txnlab/use-wallet/adapter',
-      '@walletconnect/modal',
       '@walletconnect/sign-client',
       '@walletconnect/types',
       'socket.io-client',
-      'cbor-x'
+      'cbor-x',
+      'qrcode'
     ]
   }
 })

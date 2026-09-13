@@ -59,7 +59,6 @@ export type {
   BiatecDisplayUriInfo,
   BiatecMethod,
   ConnectArgs,
-  ModalOptions,
   SignTxnsResponse,
   SignDataResponse,
   WireStdSigData

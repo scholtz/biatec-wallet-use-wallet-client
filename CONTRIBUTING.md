@@ -23,6 +23,7 @@ This is a pnpm workspace: the adapter package at the repo root, plus `examples/v
 ```bash
 pnpm test           # vitest run
 pnpm test:watch     # vitest --watch
+pnpm test:e2e       # playwright, against the built vanilla-ts example — see "End-to-end tests"
 pnpm typecheck       # tsc --noEmit
 pnpm lint            # eslint
 pnpm format:fix       # prettier --write .
@@ -55,9 +56,8 @@ suites mirror that split:
 - `src/adapter.test.ts` — dispatch only: method picker shown/skipped, `resumeSession()` branching
   on persisted account `metadata.method`. No real WalletConnect/Liquid SDK involved.
 - `src/transports/walletconnect-transport.test.ts` — mocks `@walletconnect/sign-client` and
-  `@walletconnect/modal` and drives the full adapter through `createTestHarness()` from
-  `@txnlab/use-wallet/testing`, calling `connect({ method: 'walletconnect' })` to bypass the
-  picker.
+  drives the full adapter through `createTestHarness()` from `@txnlab/use-wallet/testing`,
+  calling `connect({ method: 'walletconnect' })` to bypass the picker.
 - `src/transports/liquid-transport.test.ts` — mocks `socket.io-client` and WebRTC globals the same
   way, calling `connect({ method: 'liquid' })`.
 
@@ -70,11 +70,29 @@ When adding behavior:
   relevant transport suite; reuse the `connectAdapter()` helper to get a connected adapter with a
   mocked session in one line.
 - New dispatch behavior (e.g. how a method is chosen, or how resume picks a transport) → extend
-  `src/adapter.test.ts`, mocking `./method-picker-dialog` rather than any transport SDK.
+  `src/adapter.test.ts`, mocking `./connect-dialog` rather than any transport SDK.
 - Network/chain logic → `src/networks.test.ts` checks `BIATEC_EXTRA_NETWORKS` stay consistent with
   `caipChainIdFromGenesisHash`; extend it if you add another network.
 
 Run `pnpm test:watch` while iterating.
+
+## End-to-end tests
+
+`src/adapter.test.ts` mocks `./connect-dialog` entirely, so it can't catch a real bug in the
+dialog's own DOM/wiring — that's what `e2e/` (Playwright) is for. It drives the built
+`vanilla-ts` example in a real browser: click Connect, confirm the built-in dialog opens with the
+right method(s) and no thrown errors, switch tabs, cancel. It never completes a real
+WalletConnect/Liquid Auth pairing (that needs a live wallet), so keep new e2e tests scoped to UI
+behavior up to that point.
+
+```bash
+pnpm build                  # the example resolves the adapter via workspace:* -> dist/
+pnpm test:e2e:install       # once, to fetch the Chromium binary
+pnpm test:e2e               # runs against a vite dev server Playwright starts itself
+```
+
+Runs in CI on every PR (`.github/workflows/ci.yml`'s `e2e` job) against `dist/`, so rebuild
+before running locally if you changed `src/`.
 
 ## Documentation
 

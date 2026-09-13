@@ -8,3 +8,7 @@ coverage/
 !.env.example
 .vite/
 examples/**/dist/
+test-results/
+playwright-report/
+blob-report/
+playwright/.cache/
