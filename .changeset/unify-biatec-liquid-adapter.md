@@ -1,7 +1,0 @@
----
-'biatec-wallet-use-wallet-client': minor
----
-
-BREAKING: merge the WalletConnect and Liquid Auth transports into a single `biatec()` wallet (id `biatec`). `biatecLiquid()`, `WALLET_ID_LIQUID`, `BiatecLiquidAdapter` and the standalone `BiatecLiquidOptions` are removed — Liquid Auth is now configured via the `liquid` option on `biatec({ ... })` (or `liquid: false` to disable it; it's enabled by default). When both transports are enabled, `connect()` shows a modern, dark/light-aware built-in dialog with a method selector (WalletConnect / Liquid Auth) next to a live QR code for whichever method is selected — WalletConnect is selected by default so its QR is visible immediately, and switching tabs connects the other transport on demand; pass `connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })` from your own UI to skip the selector. `onDisplayUri` now receives a second `info: { method, requestId?, origin? }` argument, and by default renders through the same built-in dialog instead of `@walletconnect/modal`'s wallet-explorer modal — pass `useWalletConnectModal: true` to keep that modal for the WalletConnect step. The `qrcode` package is now a direct dependency (lazy-loaded, only when the dialog opens) so the built-in dialog can render an actual scannable QR code.
-
-Migration: remove any `biatecLiquid({...})` entry from your `wallets` array and move those options under `biatec({ liquid: {...} })`; update `onDisplayUri` callbacks to accept the new second argument.
