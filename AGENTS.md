@@ -34,12 +34,21 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
 
 ## Layout
 
-- `src/adapter.ts` — `BiatecWalletAdapter`: session lifecycle, `signTransactions`, `signData`.
-- `src/index.ts` — `biatec()` / `biatecLiquid()` factories + public exports.
-- `src/liquid/` — Liquid Auth transport: `protocol.ts` (ARC-0027 CBOR envelope + ARC-0060 extension,
-  deep links, base64url — mirrored in the wallet repo at `src/scripts/liquid/protocol.ts`, keep in
-  sync), `signaling.ts` (socket.io + WebRTC answer role), `adapter.ts` (`BiatecLiquidAdapter`),
-  `dialog.ts` (fallback copy-link dialog). Spec: `docs/LIQUID_AUTH_PROTOCOL.md`.
+- `src/adapter.ts` — `BiatecWalletAdapter`: single `BaseWallet` (id `biatec`) that dispatches
+  `connect`/`disconnect`/`resumeSession`/`signTransactions`/`signData` to one of two transports
+  based on the method chosen (built-in picker, or `connect({ method })`) or persisted account
+  metadata.
+- `src/transports/` — the two transport implementations, plain classes (not `BaseWallet`
+  subclasses) taking a `TransportContext`: `walletconnect-transport.ts` (`WalletConnectTransport`)
+  and `liquid-transport.ts` (`LiquidTransport`). `types.ts` defines `TransportContext`,
+  `BiatecAccountMetadata`, `BiatecDisplayUriInfo`.
+- `src/method-picker-dialog.ts` — built-in vanilla-DOM UI: the WalletConnect-vs-Liquid-Auth
+  picker and the default "here's your pairing link" dialog for both transports.
+- `src/index.ts` — the `biatec()` factory + public exports (no separate Liquid Auth factory).
+- `src/liquid/` — Liquid Auth wire protocol, transport-agnostic: `protocol.ts` (ARC-0027 CBOR
+  envelope + ARC-0060 extension, deep links, base64url — mirrored in the wallet repo at
+  `src/scripts/liquid/protocol.ts`, keep in sync), `signaling.ts` (socket.io + WebRTC answer
+  role). Spec: `docs/LIQUID_AUTH_PROTOCOL.md`.
 - `src/networks.ts` — CAIP-2 ids and extra `NetworkConfig`s (Voi, Aramid).
 - `src/window-metadata.ts` — dApp metadata auto-detection from the document.
 - `src/icon.ts` — Biatec logo as SVG / data URI.

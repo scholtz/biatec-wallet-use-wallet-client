@@ -62,6 +62,12 @@ export const walletManager = new WalletManager({
 and favicon `<link>` tags from the page automatically. Set it explicitly for a stable, intentional
 name/icon inside Biatec Wallet's approval screen.
 
+`biatec()` registers **one** wallet that supports both WalletConnect and Liquid Auth (a
+passkey-linked, peer-to-peer WebRTC transport — no relay in the signing path) — Liquid Auth is
+enabled by default with Biatec's hosted service. When the user calls `connect()`, they get a
+built-in picker between the two; pass `liquid: false` to disable Liquid Auth and always connect
+over WalletConnect instead. See [§ 9](#9-liquid-auth-and-the-method-picker) below.
+
 ## 4. Wire it into your framework
 
 ### Vanilla / any framework without a use-wallet binding
@@ -218,16 +224,17 @@ optional chain up front. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#multi-chain-
 
 ## 8. Custom QR UI (QR code + copy button only)
 
-By default `connect()` opens the full WalletConnect modal — a QR code, a "copy link" action, a
-wallet explorer, and other wallets' links. Most dApps that only support Biatec Wallet don't want
-the explorer/other-wallets noise. Pass `onDisplayUri` to receive the raw pairing string yourself
-and render **only** a QR code and a copy button instead:
+By default `connect()` shows a built-in dialog with just the raw pairing/session link and a copy
+button (or, with `useWalletConnectModal: true`, the full WalletConnect modal — a QR code, "copy
+link", a wallet explorer, and other wallets' links). Pass `onDisplayUri` to receive the raw
+string yourself and render **only** a QR code and a copy button instead:
 
 ```ts
 biatec({
   projectId,
-  onDisplayUri: (uri) => {
-    showMyQrDialog(uri) // your own component; hide it once connect() resolves or throws
+  onDisplayUri: (uri, info) => {
+    // info.method is 'walletconnect' or 'liquid' — whichever the user picked
+    showMyQrDialog(uri, info) // your own component; hide it once connect() resolves or throws
   }
 })
 ```
@@ -255,28 +262,33 @@ nothing else), see:
 Both call `navigator.clipboard.writeText(uri)` for the copy button — that API requires a secure
 context (`https://` or `localhost`), which any real deployment already has.
 
-## 9. Optional: Liquid Auth transport
+## 9. Liquid Auth and the method picker
 
-If you prefer a passkey-linked, peer-to-peer connection without a WalletConnect relay (or no
-WalletConnect project id at all), register the Liquid Auth adapter — alone or next to `biatec()`:
+Liquid Auth (a passkey-linked, peer-to-peer WebRTC connection with no WalletConnect relay in the
+signing path) is enabled by default alongside WalletConnect — it's the `liquid` option on
+`biatec()`, not a separate factory:
 
 ```ts
-import { biatecLiquid } from 'biatec-wallet-use-wallet-client'
-
-const walletManager = new WalletManager({
-  wallets: [
-    biatecLiquid({
-      onDisplayUri: (uri) => showMyQrDialog(uri) // encodes liquid://liquid.biatec.io/?requestId=…
-    })
-  ]
+biatec({
+  projectId, // still required even if every user ends up on Liquid Auth
+  liquid: {
+    // origin: 'https://liquid.biatec.io' // Biatec-hosted service (default)
+  }
 })
 ```
 
-The user opens Biatec Wallet → Connect → Liquid Auth, scans/pastes the link and approves with a
-passkey; `connect()` resolves with the linked account. Everything else (`signTransactions`,
-`signData`, network switching) is identical. Read
-[docs/LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md) for how it works and what the service
-deployment needs.
+With both transports enabled, calling `wallet.connect()` with no arguments shows a built-in
+picker (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth (Passkey)"). To
+build your own picker instead, call `wallet.connect({ method: 'liquid' })` or
+`wallet.connect({ method: 'walletconnect' })` directly and skip the built-in one. To disable
+Liquid Auth entirely and always go straight to WalletConnect, pass `liquid: false`.
+
+Once connected, the user opens Biatec Wallet → Connect → Liquid Auth (or scans the QR your
+`onDisplayUri` renders), pastes/scans the link, and approves with a passkey; `connect()` resolves
+with the linked account exactly like the WalletConnect path. Everything else
+(`signTransactions`, `signData`, network switching) is identical regardless of which transport
+connected. Read [docs/LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md) for how it works and what
+the service deployment needs.
 
 ## Next steps
 

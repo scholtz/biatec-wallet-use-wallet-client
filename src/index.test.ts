@@ -47,4 +47,11 @@ describe('biatec factory', () => {
       themeMode: 'light'
     })
   })
+
+  it('passes the liquid option through, including `false` to disable it', () => {
+    expect(biatec({ projectId, liquid: false }).options).toEqual({ projectId, liquid: false })
+    expect(biatec({ projectId, liquid: { origin: 'https://liquid.example.com' } }).options).toEqual(
+      { projectId, liquid: { origin: 'https://liquid.example.com' } }
+    )
+  })
 })

@@ -6,13 +6,15 @@ Everything importable from `biatec-wallet-use-wallet-client`. For a narrative wa
 ```ts
 import {
   biatec,
-  biatecLiquid,
   BiatecWalletAdapter,
-  BiatecLiquidAdapter,
   BiatecFactoryOptions,
   BiatecWalletOptions,
+  BiatecLiquidTransportOptions,
+  BiatecDisplayUriInfo,
+  BiatecAccountMetadata,
+  BiatecMethod,
+  ConnectArgs,
   ModalOptions,
-  SignClientOptions,
   SignTxnsResponse,
   SignDataResponse,
   WireStdSigData,
@@ -33,6 +35,11 @@ import {
 // use-wallet types shared by every adapter. Import them from the peer dependency instead:
 import { ScopeType, SignDataError } from '@txnlab/use-wallet'
 ```
+
+`biatec()` registers a **single** wallet (id `biatec`) that supports both WalletConnect v2 and
+Liquid Auth (passkey-linked WebRTC) — there is no separate `biatecLiquid()` factory or
+`biatec-liquid` wallet id. Configure Liquid Auth via the nested `liquid` option, or set
+`liquid: false` to disable it and always connect over WalletConnect.
 
 ## `biatec(options)`
 
@@ -57,17 +64,55 @@ new WalletManager({ wallets: [biatec({ projectId: '...' })] })
 
 ## `BiatecWalletOptions`
 
-Passed straight through to the adapter constructor.
+Passed straight through to the adapter constructor. Shared by both transports.
 
-| Field                                                                                                                    | Type                                                             | Default                                  | Required | Notes                                                                                                                                                                          |
-| ------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------- | ---------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `projectId`                                                                                                              | `string`                                                         | —                                        | **yes**  | WalletConnect Cloud project id from <https://cloud.reown.com>. Throws synchronously in the constructor if missing.                                                             |
-| `relayUrl`                                                                                                               | `string`                                                         | `'wss://relay.walletconnect.com'`        | no       | Override only for a self-hosted relay.                                                                                                                                         |
-| `metadata`                                                                                                               | `SignClientTypes.Metadata` (`{ name, description, url, icons }`) | auto-detected from `document`/`location` | no       | The **dApp** metadata shown to the user inside Biatec Wallet. Unrelated to `displayMetadata`.                                                                                  |
-| `onDisplayUri`                                                                                                           | `(uri: string) => void \| Promise<void>`                         | —                                        | no       | Receive the WalletConnect pairing URI to render your own QR/deep link instead of the built-in modal. See [GETTING_STARTED.md § Custom QR UI](GETTING_STARTED.md#custom-qr-ui). |
-| `enableSignData`                                                                                                         | `boolean`                                                        | `true`                                   | no       | Set `false` to omit `algo_signData` from the requested session methods and make `signData()` throw.                                                                            |
-| `chains`                                                                                                                 | `string[]`                                                       | `[]`                                     | no       | Extra CAIP-2 ids requested as optional chains, beyond every network already configured on the `WalletManager`.                                                                 |
-| `enableExplorer`, `explorerRecommendedWalletIds`, `privacyPolicyUrl`, `termsOfServiceUrl`, `themeMode`, `themeVariables` | see `@walletconnect/modal`'s `WalletConnectModalConfig`          | —                                        | no       | Passed to the WalletConnect modal. Ignored when `onDisplayUri` is set (no modal is created).                                                                                   |
+| Field                                                                                                                    | Type                                                                 | Default                                  | Required | Notes                                                                                                                                                                                                           |
+| ------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------- | ---------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`                                                                                                              | `string`                                                             | —                                        | **yes**  | WalletConnect Cloud project id from <https://cloud.reown.com>, used by the WalletConnect transport. Throws synchronously in the constructor if missing, even if you plan to use Liquid Auth only.               |
+| `relayUrl`                                                                                                               | `string`                                                             | `'wss://relay.walletconnect.com'`        | no       | Override only for a self-hosted relay.                                                                                                                                                                          |
+| `metadata`                                                                                                               | `SignClientTypes.Metadata` (`{ name, description, url, icons }`)     | auto-detected from `document`/`location` | no       | The **dApp** metadata shown to the user inside Biatec Wallet for both transports. Unrelated to `displayMetadata`.                                                                                               |
+| `onDisplayUri`                                                                                                           | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | —                                        | no       | Receive the pairing/session URI (from whichever transport was chosen) to render your own QR/deep link instead of the built-in dialog. See [GETTING_STARTED.md § Custom QR UI](GETTING_STARTED.md#custom-qr-ui). |
+| `enableSignData`                                                                                                         | `boolean`                                                            | `true`                                   | no       | Set `false` to disable `signData()` on both transports.                                                                                                                                                         |
+| `chains`                                                                                                                 | `string[]`                                                           | `[]`                                     | no       | WalletConnect only: extra CAIP-2 ids requested as optional chains, beyond every network already configured on the `WalletManager`.                                                                              |
+| `liquid`                                                                                                                 | `BiatecLiquidTransportOptions \| false`                              | `{}` (enabled, Biatec defaults)          | no       | Liquid Auth transport configuration, or `false` to disable it — see [`BiatecLiquidTransportOptions`](#biatecliquidtransportoptions) below.                                                                      |
+| `useWalletConnectModal`                                                                                                  | `boolean`                                                            | `false`                                  | no       | Use `@walletconnect/modal`'s wallet-explorer modal for the WalletConnect URI step instead of the built-in dialog. Ignored when `onDisplayUri` is set.                                                           |
+| `enableExplorer`, `explorerRecommendedWalletIds`, `privacyPolicyUrl`, `termsOfServiceUrl`, `themeMode`, `themeVariables` | see `@walletconnect/modal`'s `WalletConnectModalConfig`              | —                                        | no       | Passed to the WalletConnect modal. Only relevant when `useWalletConnectModal: true`.                                                                                                                            |
+
+### `BiatecLiquidTransportOptions`
+
+| Field                | Type                                         | Default                                                  | Notes                                                                                       |
+| -------------------- | -------------------------------------------- | -------------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| `origin`             | `string`                                     | `'https://liquid.biatec.io'`                             | Liquid Auth service the wallet authenticates against.                                       |
+| `iceServers`         | `RTCIceServer[]`                             | public Google STUN (`stun.l.google.com:19302` … `stun4`) | ICE servers for the WebRTC connection. Add a TURN server for restrictive NATs.              |
+| `metadata`           | `Partial<{ name; description; url; icons }>` | detected from the document                               | dApp metadata sent in the `biatec:hello` handshake.                                         |
+| `providerId`         | `string`                                     | random UUID                                              | ARC-0027 `providerId` carried in every message.                                             |
+| `connectTimeoutMs`   | `number`                                     | `300000`                                                 | How long `connect()` waits for the wallet to pair.                                          |
+| `reconnectTimeoutMs` | `number`                                     | `30000`                                                  | How long a lazy reconnect (after a reload) waits for the wallet before failing with `4002`. |
+| `requestTimeoutMs`   | `number`                                     | `300000`                                                 | How long a signing request waits for the user's answer.                                     |
+
+### `BiatecDisplayUriInfo`
+
+```ts
+interface BiatecDisplayUriInfo {
+  method: 'walletconnect' | 'liquid'
+  requestId?: string // Liquid Auth only
+  origin?: string // Liquid Auth only
+}
+```
+
+### `ConnectArgs`
+
+```ts
+interface ConnectArgs {
+  method?: 'walletconnect' | 'liquid'
+}
+```
+
+Pass to `wallet.connect({ method: 'liquid' })` (or `'walletconnect'`) to skip the built-in method
+picker and connect with that transport directly — useful for a custom "choose your wallet"
+picker of your own. With no `method` and both transports enabled, `connect()` shows the built-in
+picker (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth (Passkey)");
+cancelling it rejects the returned promise.
 
 ## `BiatecWalletAdapter`
 
@@ -79,20 +124,28 @@ The `BaseWallet` subclass registered by `biatec()`. You normally interact with i
 `WalletManager.getWallet('biatec')` or a framework hook (`useWallet()` in React), not directly —
 but its extra members are useful for advanced cases:
 
-| Member                                                                  | Type                                                                    | Description                                                                                                                                |
-| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `activeChainId`                                                         | `get(): string`                                                         | CAIP-2 id of the currently active network, or `''` if that network has no `caipChainId` configured.                                        |
-| `supportedChainIds`                                                     | `get(): string[]`                                                       | Every CAIP-2 id this adapter will request (active network first, then every network on the manager, then `options.chains`), de-duplicated. |
-| `sessionSupportsSignData`                                               | `get(): boolean`                                                        | Whether the **live** WalletConnect session actually advertises `algo_signData` (older wallet versions may not).                            |
-| `connect(args?)`                                                        | `(args?: Record<string, any>) => Promise<WalletAccount[]>`              | Opens a WalletConnect session. `args` is accepted for `BaseWallet` interface compatibility but unused.                                     |
-| `disconnect()`                                                          | `() => Promise<void>`                                                   | Ends the WalletConnect session and clears stored accounts.                                                                                 |
-| `resumeSession()`                                                       | `() => Promise<void>`                                                   | Restores a previously persisted session on page load. Called automatically by `WalletManager.resumeSessions()` / the framework providers.  |
-| `signTransactions(txnGroup, indexesToSign?)`                            | see below                                                               | ARC-0001 transaction signing.                                                                                                              |
-| `transactionSigner(txnGroup, indexesToSign)`                            | `(txns: algosdk.Transaction[], idx: number[]) => Promise<Uint8Array[]>` | Inherited from `BaseWallet`; wraps `signTransactions` in the shape `algosdk.AtomicTransactionComposer` expects.                            |
-| `signData(data, metadata)`                                              | see below                                                               | ARC-0060 arbitrary data signing.                                                                                                           |
-| `canSignData`                                                           | `boolean`                                                               | `true` unless constructed with `enableSignData: false`.                                                                                    |
-| `metadata`                                                              | `WalletMetadata`                                                        | `{ name, icon }` shown in wallet pickers.                                                                                                  |
-| `accounts`, `activeAccount`, `activeAddress`, `isConnected`, `isActive` | —                                                                       | Standard `BaseWallet` getters; see the [use-wallet docs](https://txnlab.gitbook.io/use-wallet).                                            |
+| Member                                                                  | Type                                                                    | Description                                                                                                                                                                           |
+| ----------------------------------------------------------------------- | ----------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `activeChainId`                                                         | `get(): string`                                                         | WalletConnect transport only. CAIP-2 id of the currently active network, or `''` if that network has no `caipChainId` configured.                                                     |
+| `supportedChainIds`                                                     | `get(): string[]`                                                       | WalletConnect transport only. Every CAIP-2 id it will request (active network first, then every network on the manager, then `options.chains`), de-duplicated.                        |
+| `sessionSupportsSignData`                                               | `get(): boolean`                                                        | WalletConnect transport only. Whether the **live** session actually advertises `algo_signData` (older wallet versions may not).                                                       |
+| `walletInfo`                                                            | `get(): HelloResult \| null`                                            | Liquid Auth transport only. What the wallet announced in the hello handshake, or `null` otherwise.                                                                                    |
+| `isChannelOpen`                                                         | `get(): boolean`                                                        | Liquid Auth transport only. Whether the WebRTC data channel is currently open (`isConnected` can be `true` while this is `false` after a reload — the first request re-pairs lazily). |
+| `connect(args?)`                                                        | `(args?: ConnectArgs) => Promise<WalletAccount[]>`                      | Opens a session. See [`ConnectArgs`](#connectargs) above for how `args.method` skips the built-in picker.                                                                             |
+| `disconnect()`                                                          | `() => Promise<void>`                                                   | Ends the active session (whichever transport it used) and clears stored accounts.                                                                                                     |
+| `resumeSession()`                                                       | `() => Promise<void>`                                                   | Restores a previously persisted session, dispatching to whichever transport that session used. Called automatically by `WalletManager.resumeSessions()` / the framework providers.    |
+| `signTransactions(txnGroup, indexesToSign?)`                            | see below                                                               | ARC-0001 transaction signing, dispatched to the active transport.                                                                                                                     |
+| `transactionSigner(txnGroup, indexesToSign)`                            | `(txns: algosdk.Transaction[], idx: number[]) => Promise<Uint8Array[]>` | Inherited from `BaseWallet`; wraps `signTransactions` in the shape `algosdk.AtomicTransactionComposer` expects.                                                                       |
+| `signData(data, metadata)`                                              | see below                                                               | ARC-0060 arbitrary data signing, dispatched to the active transport.                                                                                                                  |
+| `canSignData`                                                           | `boolean`                                                               | `true` unless constructed with `enableSignData: false`.                                                                                                                               |
+| `metadata`                                                              | `WalletMetadata`                                                        | `{ name, icon }` shown in wallet pickers.                                                                                                                                             |
+| `accounts`, `activeAccount`, `activeAddress`, `isConnected`, `isActive` | —                                                                       | Standard `BaseWallet` getters; see the [use-wallet docs](https://txnlab.gitbook.io/use-wallet).                                                                                       |
+
+Every persisted account carries `metadata: BiatecAccountMetadata` (`{ method: 'walletconnect' }`
+or `{ method: 'liquid', requestId, origin }`), which `resumeSession()` reads to dispatch to the
+right transport. Errors from the Liquid Auth transport surface as `LiquidProviderError` (`code` =
+ARC-0027 code: `4001` rejected, `4002` timed out, `4003` unsupported, `4200` invalid input);
+`signData()` maps them to `SignDataError` like the WalletConnect transport.
 
 ### `signTransactions`
 
@@ -135,47 +188,13 @@ signData(data: string, metadata: StdSignMetadata): Promise<StdSignDataResponse>
 
   Throws `SessionError` if called before a session exists.
 
-## `biatecLiquid(options?)`
+## Liquid Auth transport
 
-```ts
-function biatecLiquid(options?: BiatecLiquidFactoryOptions): WalletAdapterConfig
-```
+Configured via the `liquid` field on `BiatecWalletOptions` (see
+[`BiatecLiquidTransportOptions`](#biatecliquidtransportoptions) above) — there is no separate
+factory or wallet id. Protocol details: [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).
 
-Factory for the **Liquid Auth** transport (wallet id `biatec-liquid`, display name
-"Biatec Wallet (Liquid Auth)"). Registers `BiatecLiquidAdapter`. Can be used next to `biatec()`.
-Protocol details: [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).
-
-### `BiatecLiquidOptions`
-
-| Field                            | Type                                                                  | Default                                                  | Notes                                                                                                            |
-| -------------------------------- | --------------------------------------------------------------------- | -------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `origin`                         | `string`                                                              | `'https://liquid.biatec.io'`                             | Liquid Auth service the wallet authenticates against. Must be hosted under the wallet's domain (WebAuthn RP ID). |
-| `iceServers`                     | `RTCIceServer[]`                                                      | public Google STUN (`stun.l.google.com:19302` … `stun4`) | ICE servers for the WebRTC connection. Add a TURN server for restrictive NATs.                                   |
-| `onDisplayUri`                   | `(uri: string, info: { requestId; origin }) => void \| Promise<void>` | built-in copy-link dialog                                | Receive the `liquid://<host>/?requestId=…` link to render a QR code.                                             |
-| `metadata`                       | `Partial<{ name; description; url; icons }>`                          | detected from the document                               | dApp metadata sent in the `biatec:hello` handshake and shown by the wallet.                                      |
-| `providerId`                     | `string`                                                              | random UUID                                              | ARC-0027 `providerId` carried in every message.                                                                  |
-| `enableSignData`                 | `boolean`                                                             | `true`                                                   | Expose `signData()` (ARC-0060 over `arc0060:sign_data`).                                                         |
-| `connectTimeoutMs`               | `number`                                                              | `300000`                                                 | How long `connect()` waits for the wallet to pair.                                                               |
-| `reconnectTimeoutMs`             | `number`                                                              | `30000`                                                  | How long a lazy reconnect (after a reload) waits for the wallet before failing with `4002`.                      |
-| `requestTimeoutMs`               | `number`                                                              | `300000`                                                 | How long a signing request waits for the user's answer.                                                          |
-| `displayMetadata` (factory only) | `Partial<{ name; icon }>`                                             | Biatec name + logo                                       | Wallet-picker appearance.                                                                                        |
-
-### `BiatecLiquidAdapter`
-
-Same `BaseWallet` surface as `BiatecWalletAdapter` (`connect`, `disconnect`, `resumeSession`,
-`signTransactions`, `transactionSigner`, `signData`, `canSignData`, …) plus:
-
-| Member          | Type                         | Description                                                                                                                                              |
-| --------------- | ---------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `walletInfo`    | `get(): HelloResult \| null` | What the wallet announced in the hello handshake (address, name, version, methods).                                                                      |
-| `isChannelOpen` | `get(): boolean`             | Whether the WebRTC data channel is currently open. `isConnected` can be `true` while this is `false` after a reload — the first request re-pairs lazily. |
-
-Accounts carry `metadata: { requestId, origin }` (`LiquidAccountMetadata`) so the pairing can be
-resumed. Errors from the wallet surface as `LiquidProviderError` (`code` = ARC-0027 code:
-`4001` rejected, `4002` timed out, `4003` unsupported, `4200` invalid input); `signData()` maps
-them to `SignDataError` like the WalletConnect adapter.
-
-### Protocol helpers
+### Liquid Auth protocol helpers
 
 Everything in `src/liquid/protocol.ts` is exported for custom integrations and for keeping the
 wallet in sync: `generateLiquidDeepLink`, `parseLiquidDeepLink`, `encodeLiquidMessage`,

@@ -1,30 +1,42 @@
 import QRCode from 'qrcode'
 import { useEffect, useRef, useState } from 'react'
-import { onWalletConnectClose, onWalletConnectUri } from './walletManager'
+import {
+  onWalletConnectClose,
+  onWalletConnectUri,
+  type WalletConnectUriDetail
+} from './walletManager'
+
+const METHOD_LABELS = {
+  walletconnect: 'WalletConnect',
+  liquid: 'Liquid Auth'
+}
 
 /**
- * Minimal WalletConnect pairing UI: just a QR code and a copy button — no wallet explorer,
- * no "get a wallet" links, nothing else. Rendered instead of the default WalletConnect modal
- * because `biatec()` was configured with `onDisplayUri` (see walletManager.ts), which hands us
- * the pairing URI directly instead of opening that modal itself.
+ * Minimal pairing UI: just a QR code and a copy button — no wallet explorer, no "get a wallet"
+ * links, nothing else. Rendered instead of the adapter's built-in URI dialog because `biatec()`
+ * was configured with `onDisplayUri` (see walletManager.ts), which hands us the pairing URI
+ * directly instead of showing that dialog itself. The adapter's built-in method picker (choose
+ * WalletConnect vs. Liquid Auth) still appears first; this component only renders the URI step.
  *
  * Mount this once near the root of the app (see App.tsx) — it stays invisible until a `connect()`
  * call produces a URI, and hides itself again once that call settles (success or failure).
  */
 export function ConnectQrDialog() {
-  const [uri, setUri] = useState<string | null>(null)
+  const [detail, setDetail] = useState<WalletConnectUriDetail | null>(null)
   const [qrDataUrl, setQrDataUrl] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
   const copiedTimeout = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
 
   useEffect(() => {
-    const unsubscribeUri = onWalletConnectUri(setUri)
-    const unsubscribeClose = onWalletConnectClose(() => setUri(null))
+    const unsubscribeUri = onWalletConnectUri(setDetail)
+    const unsubscribeClose = onWalletConnectClose(() => setDetail(null))
     return () => {
       unsubscribeUri()
       unsubscribeClose()
     }
   }, [])
+
+  const uri = detail?.uri ?? null
 
   useEffect(() => {
     if (!uri) {
@@ -66,7 +78,7 @@ export function ConnectQrDialog() {
         justifyContent: 'center',
         zIndex: 1000
       }}
-      onClick={() => setUri(null)}
+      onClick={() => setDetail(null)}
     >
       <div
         style={{
@@ -80,7 +92,9 @@ export function ConnectQrDialog() {
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem' }}>Scan with Biatec Wallet</h2>
+        <h2 style={{ margin: '0 0 0.75rem', fontSize: '1.1rem' }}>
+          Scan with Biatec Wallet — {METHOD_LABELS[detail!.info.method]}
+        </h2>
 
         {qrDataUrl ? (
           <img src={qrDataUrl} alt="WalletConnect pairing QR code" width={280} height={280} />
@@ -96,7 +110,7 @@ export function ConnectQrDialog() {
         </button>
 
         <button
-          onClick={() => setUri(null)}
+          onClick={() => setDetail(null)}
           style={{ marginTop: '0.5rem', width: '100%', padding: '0.5rem', background: 'none' }}
         >
           Cancel

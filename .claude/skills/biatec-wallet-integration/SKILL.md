@@ -94,6 +94,7 @@ export const walletManager = new WalletManager({
         url: typeof window !== 'undefined' ? window.location.origin : '',
         icons: [/* absolute URL to an icon, or [] */]
       }
+      // liquid: false // uncomment to disable Liquid Auth and always use WalletConnect — see Step 5b
     })
   ],
   defaultNetwork: 'testnet' // 'mainnet' once ready for production; see Step 5 for other networks
@@ -103,11 +104,17 @@ export const walletManager = new WalletManager({
 Read the project id from whatever env var convention the framework uses
 (`import.meta.env.VITE_*` for Vite, `process.env.NEXT_PUBLIC_*` for Next.js, etc.) — **never**
 hardcode it as a literal string in committed code. Add the corresponding entry to `.env.example`
-if one exists.
+if one exists. **`projectId` is required even if the dApp mainly wants Liquid Auth** (Step 5b) —
+`biatec()` covers both transports under one wallet.
 
 `metadata` is optional; omitting it makes the adapter read `<title>`/`<meta description>`/favicon
 from the page at connect time. Prefer setting it explicitly for a stable, intentional presentation
 inside Biatec Wallet's approval screen.
+
+`biatec()` registers **one** wallet (id `biatec`) that supports both WalletConnect and Liquid Auth
+— Liquid Auth is enabled by default. `wallet.connect()` with no arguments shows a built-in picker
+letting the user choose; pass `liquid: false` to disable Liquid Auth and skip that picker entirely
+(see Step 5b for when to keep it enabled).
 
 ## 3. Detect the framework and continue accordingly
 
@@ -219,28 +226,28 @@ walletManager.subscribe(() => {
 
 ## 5. Optional: minimal QR-code-only pairing UI
 
-By default `connect()` opens the full WalletConnect modal — a QR code, "copy link", a wallet
-explorer, and other wallets' download links. If the user only asked for **Biatec Wallet** support
-(not a multi-wallet picker), that explorer is noise. Ask the user whether they want the default
-modal or a minimal dialog with just a QR code and a copy button; if they want minimal, or don't
-express a preference and the dApp only registers Biatec Wallet, implement this:
+By default `connect()` shows a built-in dialog with just the raw pairing/session link and a copy
+button — no wallet explorer or other wallets' download links. If the user wants a **branded QR
+code** instead of that plain link (or a fully custom picker), implement this:
 
 1. Add a QR code renderer: `<pkg-manager> add qrcode` (+ `@types/qrcode` as a dev dependency in a
    TypeScript project).
-2. Pass `onDisplayUri` in Step 2's `biatec({...})` call — it receives the raw pairing string
-   instead of the modal opening itself:
+2. Pass `onDisplayUri` in Step 2's `biatec({...})` call — it receives the raw pairing/session
+   string, plus which transport produced it, instead of the built-in dialog opening itself:
 
    ```ts
    biatec({
      projectId,
-     onDisplayUri: (uri) => showQrDialog(uri) // your own function/component from step 3 below
+     onDisplayUri: (uri, info) => showQrDialog(uri, info) // info.method: 'walletconnect' | 'liquid'
    })
    ```
 
 3. Build a small dialog component that renders `await QRCode.toDataURL(uri)` as an `<img>`, plus a
    button calling `navigator.clipboard.writeText(uri)`. Wrap the `wallet.connect()` call from
    Step 4 in `try { ... } finally { hideQrDialog() }` so the dialog closes whether the connection
-   succeeds, fails, or is cancelled.
+   succeeds, fails, or is cancelled. If Liquid Auth is enabled (Step 5b, the default), the built-in
+   method picker still shows first — this dialog only replaces the _second_ step, after a method
+   is chosen.
 4. If the framework wraps `WalletManager` construction in a module-scope file (React/Solid/Svelte,
    per Step 2) rather than component state, `onDisplayUri` fires outside the framework's reactive
    system — bridge it with a plain `EventTarget` (emit an event from `onDisplayUri`, subscribe to
@@ -256,27 +263,34 @@ Reference implementation to copy from rather than reinvent:
   [`examples/vanilla-ts/src/main.ts`](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/examples/vanilla-ts/src/main.ts)
   (vanilla, using the native `<dialog>` element, no bridge needed).
 
-## 5b. Optional: Liquid Auth transport (no WalletConnect relay)
+## 5b. Liquid Auth transport and the method picker (enabled by default)
 
-`biatecLiquid()` is a second adapter in the same package that pairs Biatec Wallet through the
-Algorand Foundation's Liquid Auth protocol: a passkey-authenticated link, then a direct
-encrypted WebRTC data channel (public Google STUN servers). Use it when the user asks for
-Liquid Auth, for a relay-free/peer-to-peer connection, or has no WalletConnect project id.
-It can be registered **alongside** `biatec()` (different wallet ids: `biatec` / `biatec-liquid`).
+`biatec()` supports the Algorand Foundation's Liquid Auth protocol as a **second transport** under
+the same wallet — a passkey-authenticated link, then a direct encrypted WebRTC data channel
+(public Google STUN servers) — **enabled by default**, configured via the `liquid` option, not a
+separate factory or wallet id:
 
 ```ts
-import { biatecLiquid } from 'biatec-wallet-use-wallet-client'
-
-biatecLiquid({
-  // origin: 'https://liquid.biatec.io',      // default; only change for a self-hosted service
-  onDisplayUri: (uri) => showQrDialog(uri) // same QR dialog as Step 5 — the URI is liquid://…
+biatec({
+  projectId, // still required even if the dApp mainly wants Liquid Auth
+  liquid: {
+    // origin: 'https://liquid.biatec.io' // default; only change for a self-hosted service
+  }
+  // liquid: false // disable Liquid Auth entirely — connect() always uses WalletConnect, no picker
 })
 ```
 
-Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical. Do not try
-to host a Liquid Auth service for the dApp: with the web wallet the service must live under the
-wallet's own domain, which the default `origin` already does. Details:
-`docs/LIQUID_AUTH_PROTOCOL.md` in the package repo.
+With both transports enabled (the default), calling `wallet.connect()` with no arguments shows a
+**built-in picker** (Biatec logo, "Connect with WalletConnect" / "Connect with Liquid Auth
+(Passkey)"). Leave it as-is unless the user asks for a custom picker UI — in that case, build your
+own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
+`wallet.connect({ method: 'walletconnect' })` directly to skip the built-in one. If the user only
+wants WalletConnect (no picker at all), pass `liquid: false`.
+
+Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical regardless of
+which transport connected. Do not try to host a Liquid Auth service for the dApp: with the web
+wallet the service must live under the wallet's own domain, which the default `origin` already
+does. Details: `docs/LIQUID_AUTH_PROTOCOL.md` in the package repo.
 
 ## 6. Optional: register Voi mainnet / Aramid mainnet
 

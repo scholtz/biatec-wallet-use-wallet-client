@@ -49,14 +49,28 @@ Run an example against your change: `pnpm build` first (examples import the buil
 
 ## Tests
 
-`src/adapter.test.ts` mocks `@walletconnect/sign-client` and `@walletconnect/modal` and drives the
-adapter through `createTestHarness()` from `@txnlab/use-wallet/testing`. When adding behavior:
+`BiatecWalletAdapter` (`src/adapter.ts`) is a thin dispatcher over two transports, and the test
+suites mirror that split:
 
-- New adapter option → add a constructor test (`describe('constructor')`) and, if it changes what
-  gets requested at connect time, a `describe('connect')` test asserting the exact
+- `src/adapter.test.ts` — dispatch only: method picker shown/skipped, `resumeSession()` branching
+  on persisted account `metadata.method`. No real WalletConnect/Liquid SDK involved.
+- `src/transports/walletconnect-transport.test.ts` — mocks `@walletconnect/sign-client` and
+  `@walletconnect/modal` and drives the full adapter through `createTestHarness()` from
+  `@txnlab/use-wallet/testing`, calling `connect({ method: 'walletconnect' })` to bypass the
+  picker.
+- `src/transports/liquid-transport.test.ts` — mocks `socket.io-client` and WebRTC globals the same
+  way, calling `connect({ method: 'liquid' })`.
+
+When adding behavior:
+
+- New WalletConnect option → add a constructor test in the walletconnect-transport suite and, if
+  it changes what gets requested at connect time, a `describe('connect')` test asserting the exact
   `requiredNamespaces`/`optionalNamespaces` shape sent to `client.connect()`.
-- New signing behavior → extend `describe('signTransactions')` / `describe('signData')`; reuse the
-  `connectAdapter()` helper to get a connected adapter with a mocked session in one line.
+- New signing behavior → extend `describe('signTransactions')` / `describe('signData')` in the
+  relevant transport suite; reuse the `connectAdapter()` helper to get a connected adapter with a
+  mocked session in one line.
+- New dispatch behavior (e.g. how a method is chosen, or how resume picks a transport) → extend
+  `src/adapter.test.ts`, mocking `./method-picker-dialog` rather than any transport SDK.
 - Network/chain logic → `src/networks.test.ts` checks `BIATEC_EXTRA_NETWORKS` stay consistent with
   `caipChainIdFromGenesisHash`; extend it if you add another network.
 

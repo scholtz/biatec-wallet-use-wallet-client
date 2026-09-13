@@ -1,22 +1,22 @@
 import type { WalletAdapterConfig, WalletMetadata } from '@txnlab/use-wallet/adapter'
 import { BiatecWalletAdapter, WALLET_ID } from './adapter'
 import type { BiatecWalletOptions } from './adapter'
-import { BiatecLiquidAdapter, WALLET_ID_LIQUID } from './liquid/adapter'
-import type { BiatecLiquidOptions } from './liquid/adapter'
 
 export interface BiatecFactoryOptions extends BiatecWalletOptions {
   /**
    * Override the wallet's display name / icon shown by your dApp's wallet picker.
    *
-   * Note: the `metadata` option is the WalletConnect *dApp* metadata sent to the
-   * wallet (name, description, url, icons), mirroring `@txnlab/use-wallet-walletconnect`.
-   * Use `displayMetadata` for the wallet-list appearance instead.
+   * Note: the `metadata` option is the dApp metadata sent to the wallet (name, description,
+   * url, icons), mirroring `@txnlab/use-wallet-walletconnect`. Use `displayMetadata` for the
+   * wallet-list appearance instead.
    */
   displayMetadata?: Partial<WalletMetadata>
 }
 
 /**
- * Factory for the Biatec Wallet adapter.
+ * Factory for the Biatec Wallet adapter. A single wallet entry that supports connecting over
+ * WalletConnect v2 or Liquid Auth (passkey-linked WebRTC) — both are enabled by default, and
+ * `connect()` shows a built-in picker when both are available.
  *
  * @example
  * ```ts
@@ -26,6 +26,11 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
  * const manager = new WalletManager({
  *   wallets: [biatec({ projectId: '<walletconnect-project-id>' })]
  * })
+ * ```
+ *
+ * Disable Liquid Auth and always connect over WalletConnect:
+ * ```ts
+ * biatec({ projectId: '<walletconnect-project-id>', liquid: false })
  * ```
  */
 export function biatec(options: BiatecFactoryOptions): WalletAdapterConfig {
@@ -49,8 +54,12 @@ export {
 } from './adapter'
 export type {
   BiatecWalletOptions,
+  BiatecLiquidTransportOptions,
+  BiatecAccountMetadata,
+  BiatecDisplayUriInfo,
+  BiatecMethod,
+  ConnectArgs,
   ModalOptions,
-  SignClientOptions,
   SignTxnsResponse,
   SignDataResponse,
   WireStdSigData
@@ -63,34 +72,9 @@ export {
 } from './networks'
 export type { BiatecNetworkId } from './networks'
 
-// ---------- Liquid Auth transport ----------------------------------- //
+// ---------- Liquid Auth transport-level utilities -------------------- //
+// Useful for consumers building fully custom pairing UI; no adapter coupling.
 
-export interface BiatecLiquidFactoryOptions extends BiatecLiquidOptions {
-  /** Override the wallet's display name / icon shown by your dApp's wallet picker. */
-  displayMetadata?: Partial<WalletMetadata>
-}
-
-/**
- * Factory for the Biatec Wallet **Liquid Auth** adapter (passkey-linked WebRTC transport).
- * Can be registered alongside `biatec()` — they use different wallet ids.
- *
- * @example
- * ```ts
- * new WalletManager({ wallets: [biatecLiquid({ onDisplayUri: (uri) => showQr(uri) })] })
- * ```
- */
-export function biatecLiquid(options: BiatecLiquidFactoryOptions = {}): WalletAdapterConfig {
-  const { displayMetadata, ...adapterOptions } = options
-  return {
-    id: WALLET_ID_LIQUID,
-    metadata: { ...BiatecLiquidAdapter.defaultMetadata, ...displayMetadata },
-    Adapter: BiatecLiquidAdapter as unknown as WalletAdapterConfig['Adapter'],
-    options: adapterOptions as unknown as Record<string, unknown>
-  }
-}
-
-export { BiatecLiquidAdapter, WALLET_ID_LIQUID } from './liquid/adapter'
-export type { BiatecLiquidOptions, LiquidAccountMetadata } from './liquid/adapter'
 export { LiquidSignalClient, LiquidSignalError } from './liquid/signaling'
 export type { LinkMessage, LiquidPeerSession } from './liquid/signaling'
 export {

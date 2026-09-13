@@ -1,18 +1,20 @@
 # Biatec Liquid Auth protocol
 
-The second transport of this package (`biatecLiquid()`), and the dApp ⇄ Biatec Wallet
-communication protocol built on the Algorand Foundation's **Liquid Auth**
-(<https://liquidauth.com>, <https://github.com/algorandfoundation/liquid-auth>). Liquid Auth is
-the Foundation's WalletConnect replacement: a FIDO2/passkey-authenticated link followed by a
-direct, encrypted, peer-to-peer WebRTC channel. It is not (yet) a numbered ARC; it builds on
-ARC-31 (proving control of an account key) and its messages follow **ARC-0027** (provider message
-schema). This document is the normative description of what the two Biatec implementations do —
-[`src/liquid/`](../src/liquid) here (dApp side) and `src/scripts/liquid` + `src/store/liquid.ts`
-in the [wallet](https://github.com/scholtz/wallet) (wallet side).
+The Liquid Auth transport of this package's `biatec()` wallet (`LiquidTransport`, in
+`src/transports/liquid-transport.ts`), and the dApp ⇄ Biatec Wallet communication protocol built
+on the Algorand Foundation's **Liquid Auth** (<https://liquidauth.com>,
+<https://github.com/algorandfoundation/liquid-auth>). Liquid Auth is the Foundation's
+WalletConnect replacement: a FIDO2/passkey-authenticated link followed by a direct, encrypted,
+peer-to-peer WebRTC channel. It is not (yet) a numbered ARC; it builds on ARC-31 (proving control
+of an account key) and its messages follow **ARC-0027** (provider message schema). This document
+is the normative description of what the two Biatec implementations do —
+[`src/liquid/`](../src/liquid) and [`src/transports/liquid-transport.ts`](../src/transports/liquid-transport.ts)
+here (dApp side) and `src/scripts/liquid` + `src/store/liquid.ts` in the
+[wallet](https://github.com/scholtz/wallet) (wallet side).
 
 ```mermaid
 sequenceDiagram
-    participant D as dApp (biatecLiquid adapter)
+    participant D as dApp (LiquidTransport)
     participant S as Liquid Auth service (https://liquid.biatec.io)
     participant W as Biatec Wallet (wallet.biatec.io)
 

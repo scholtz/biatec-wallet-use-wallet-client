@@ -1,5 +1,9 @@
 import { NetworkConfigBuilder, WalletManager } from '@txnlab/use-wallet'
-import { biatec, biatecLiquid, BIATEC_EXTRA_NETWORKS } from 'biatec-wallet-use-wallet-client'
+import {
+  biatec,
+  BIATEC_EXTRA_NETWORKS,
+  type BiatecDisplayUriInfo
+} from 'biatec-wallet-use-wallet-client'
 
 // Get a project id at https://cloud.reown.com and put it in examples/react-ts/.env
 // as VITE_WC_PROJECT_ID (copy .env.example).
@@ -20,7 +24,7 @@ const networks = new NetworkConfigBuilder()
   .build()
 
 /**
- * Bridges the adapters' `onDisplayUri` callbacks (fired outside React, from module-scope
+ * Bridges `biatec()`'s `onDisplayUri` callback (fired outside React, from module-scope
  * `walletManager`) into React state. `<ConnectQrDialog>` subscribes to this and renders the
  * pairing URI (a WalletConnect `wc:` URI or a Liquid Auth `liquid://` link) as a QR code plus
  * copy button — see that component for why.
@@ -30,9 +34,14 @@ export const walletConnectUriEvents = new EventTarget()
 const WALLET_CONNECT_URI_EVENT = 'wc-uri'
 const WALLET_CONNECT_CLOSE_EVENT = 'wc-close'
 
-export function emitWalletConnectUri(uri: string): void {
+export interface WalletConnectUriDetail {
+  uri: string
+  info: BiatecDisplayUriInfo
+}
+
+export function emitWalletConnectUri(uri: string, info: BiatecDisplayUriInfo): void {
   walletConnectUriEvents.dispatchEvent(
-    new CustomEvent<string>(WALLET_CONNECT_URI_EVENT, { detail: uri })
+    new CustomEvent<WalletConnectUriDetail>(WALLET_CONNECT_URI_EVENT, { detail: { uri, info } })
   )
 }
 
@@ -41,8 +50,8 @@ export function closeWalletConnectDialog(): void {
   walletConnectUriEvents.dispatchEvent(new Event(WALLET_CONNECT_CLOSE_EVENT))
 }
 
-export function onWalletConnectUri(handler: (uri: string) => void): () => void {
-  const listener = (event: Event) => handler((event as CustomEvent<string>).detail)
+export function onWalletConnectUri(handler: (detail: WalletConnectUriDetail) => void): () => void {
+  const listener = (event: Event) => handler((event as CustomEvent<WalletConnectUriDetail>).detail)
   walletConnectUriEvents.addEventListener(WALLET_CONNECT_URI_EVENT, listener)
   return () => walletConnectUriEvents.removeEventListener(WALLET_CONNECT_URI_EVENT, listener)
 }
@@ -63,9 +72,11 @@ const dappMetadata = {
  * The single WalletManager instance for the app. Create it once, outside any
  * component, and pass it to <WalletProvider manager={walletManager}>.
  *
- * Both Biatec Wallet transports are registered so the picker shows two entries:
- * WalletConnect (relay-based) and Liquid Auth (passkey-linked, peer-to-peer). Add
- * pera()/defly()/etc. from their own @txnlab/use-wallet-* packages for more choices.
+ * A single Biatec Wallet entry supports both WalletConnect (relay-based) and Liquid Auth
+ * (passkey-linked, peer-to-peer) — `connect()` shows a built-in picker between the two, or
+ * pass `connect({ method: 'liquid' })` / `connect({ method: 'walletconnect' })` from your own
+ * UI to skip it. Add pera()/defly()/etc. from their own @txnlab/use-wallet-* packages for more
+ * wallet choices.
  */
 export const walletManager = new WalletManager({
   wallets: [
@@ -74,15 +85,11 @@ export const walletManager = new WalletManager({
       // Optional: dApp metadata shown to the user inside Biatec Wallet.
       // Auto-detected from <title>/<meta description>/favicon when omitted.
       metadata: dappMetadata,
-      // Skip the built-in WalletConnect modal (wallet explorer, "copy link", etc.) and show
-      // only a QR code + copy button instead — see <ConnectQrDialog>.
-      onDisplayUri: (uri) => emitWalletConnectUri(uri)
-    }),
-    biatecLiquid({
-      ...(liquidOrigin ? { origin: liquidOrigin } : {}),
-      metadata: dappMetadata,
-      // Same dialog: the QR code now encodes the liquid:// link the wallet scans.
-      onDisplayUri: (uri) => emitWalletConnectUri(uri)
+      ...(liquidOrigin ? { liquid: { origin: liquidOrigin } } : {}),
+      // Skip the built-in URI dialog (and the WalletConnect modal) and show only a QR code +
+      // copy button instead — see <ConnectQrDialog>. The built-in method picker (WalletConnect
+      // vs. Liquid Auth) still appears first; `info.method` tells the dialog which URI this is.
+      onDisplayUri: (uri, info) => emitWalletConnectUri(uri, info)
     })
   ],
   networks,

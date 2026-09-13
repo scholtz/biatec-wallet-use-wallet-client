@@ -1,135 +1,85 @@
 /**
  * Biatec Wallet adapter for @txnlab/use-wallet v5.
  *
- * Transport: WalletConnect v2 (sign-client). Biatec Wallet (https://wallet.biatec.io)
- * approves sessions for every AVM chain it knows (Algorand mainnet/testnet/betanet/fnet,
- * Voi mainnet, Aramid mainnet) and exposes the JSON-RPC methods `algo_signTxn`
- * (ARC-0001) and `algo_signData` (ARC-0060).
- *
- * The transaction-signing path is adapted from @txnlab/use-wallet-walletconnect
- * (MIT, Copyright (c) TxnLab, Inc.).
+ * A single wallet (id `biatec`) that supports two transports to the same physical wallet
+ * (https://wallet.biatec.io): WalletConnect v2 (ARC-0001 `algo_signTxn` / ARC-0060
+ * `algo_signData` JSON-RPC) and Liquid Auth (passkey-linked WebRTC carrying the same two
+ * operations over an ARC-0027 envelope). When both are available, `connect()` shows a
+ * built-in picker so the end user chooses; pass `connect({ method: 'liquid' })` or
+ * `connect({ method: 'walletconnect' })` to skip it. See docs/ARCHITECTURE.md.
  */
-import algosdk from 'algosdk'
+import type algosdk from 'algosdk'
 import {
   BaseWallet,
-  SignDataError,
-  base64ToByteArray,
-  byteArrayToBase64,
-  compareAccounts,
-  flattenTxnGroup,
-  formatJsonRpcRequest,
-  isSignedTxn,
-  isTransactionArray,
   type AdapterConstructorParams,
   type StdSignDataResponse,
   type StdSignMetadata,
   type WalletAccount,
-  type WalletMetadata,
-  type WalletState,
-  type WalletTransaction
+  type WalletMetadata
 } from '@txnlab/use-wallet/adapter'
-import type { WalletConnectModal, WalletConnectModalConfig } from '@walletconnect/modal'
-import type SignClient from '@walletconnect/sign-client'
-import type { SessionTypes, SignClientTypes } from '@walletconnect/types'
+import { SessionError } from './errors'
 import { ICON } from './icon'
-import { getWindowMetadata } from './window-metadata'
+import type { HelloResult } from './liquid/protocol'
+import { openMethodPickerDialog, openUriDisplayDialog } from './method-picker-dialog'
+import {
+  LiquidTransport,
+  type LiquidConnectHandlers,
+  type LiquidTransportOptions
+} from './transports/liquid-transport'
+import type {
+  BiatecAccountMetadata,
+  BiatecDisplayUriInfo,
+  BiatecMethod,
+  TransportContext
+} from './transports/types'
+import {
+  WalletConnectTransport,
+  type WalletConnectConnectHandlers,
+  type WalletConnectTransportOptions
+} from './transports/walletconnect-transport'
 
-// ---------- Constants ---------------------------------------------- //
+export { SessionError } from './errors'
+export {
+  DEFAULT_RELAY_URL,
+  SIGN_DATA_METHOD,
+  SIGN_TXN_METHOD,
+  type ModalOptions,
+  type SignDataResponse,
+  type SignTxnsResponse,
+  type WireStdSigData
+} from './transports/walletconnect-transport'
+export type { LiquidTransportOptions as BiatecLiquidTransportOptions } from './transports/liquid-transport'
+export type { BiatecAccountMetadata, BiatecDisplayUriInfo, BiatecMethod } from './transports/types'
 
 export const WALLET_ID = 'biatec' as const
-export const SIGN_TXN_METHOD = 'algo_signTxn' as const
-export const SIGN_DATA_METHOD = 'algo_signData' as const
-export const DEFAULT_RELAY_URL = 'wss://relay.walletconnect.com'
 export const BIATEC_WALLET_URL = 'https://wallet.biatec.io'
 
-/** Session events Biatec Wallet declares when approving a session. */
-const SESSION_EVENTS = ['chainChanged', 'accountsChanged']
-
-// ---------- Options ------------------------------------------------ //
-
-export interface SignClientOptions {
-  /** WalletConnect Cloud project id (https://cloud.reown.com). Required. */
-  projectId: string
-  /** Relay URL. Defaults to the public WalletConnect relay. */
-  relayUrl?: string
+export interface BiatecWalletOptions extends WalletConnectTransportOptions {
   /**
-   * dApp metadata shown to the user inside Biatec Wallet.
-   * Merged over metadata auto-detected from the current document.
+   * Called with the pairing/session URI instead of showing the built-in dialog (or the
+   * WalletConnect modal, if `useWalletConnectModal` is set). Use it to render your own QR
+   * code / deep link UI. `connect()` resolves once the wallet approves the connection, so
+   * you can close your UI then. `info.method` tells you which transport produced the URI.
    */
-  metadata?: SignClientTypes.Metadata
+  onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
+  /**
+   * Liquid Auth (passkey-linked WebRTC) transport configuration. Enabled by default with
+   * Biatec's hosted signaling service; pass `false` to disable it entirely, in which case
+   * `connect()` always uses WalletConnect and skips the method picker.
+   */
+  liquid?: LiquidTransportOptions | false
 }
 
-export type ModalOptions = Pick<
-  WalletConnectModalConfig,
-  | 'enableExplorer'
-  | 'explorerRecommendedWalletIds'
-  | 'privacyPolicyUrl'
-  | 'termsOfServiceUrl'
-  | 'themeMode'
-  | 'themeVariables'
->
-
-export interface BiatecWalletOptions extends SignClientOptions, ModalOptions {
-  /**
-   * Called with the pairing URI instead of opening the WalletConnect modal.
-   * Use it to render your own QR code / deep link UI. `connect()` resolves
-   * once the wallet approves the session, so you can close your UI then.
-   */
-  onDisplayUri?: (uri: string) => void | Promise<void>
-  /**
-   * Request the ARC-0060 `algo_signData` method as an optional namespace method
-   * and enable `signData()` on the adapter. Defaults to `true`.
-   */
-  enableSignData?: boolean
-  /**
-   * Extra CAIP-2 chain ids to request as *optional* chains, in addition to every
-   * `caipChainId` found in the WalletManager network configuration.
-   * The active network's chain is always requested as *required*.
-   */
-  chains?: string[]
+export interface ConnectArgs {
+  /** Skip the built-in method picker and connect with this transport directly. */
+  method?: BiatecMethod
 }
-
-// ---------- Wire types --------------------------------------------- //
-
-export type SignTxnsResponse = Array<Uint8Array | number[] | string | null | undefined>
-
-/** One ARC-0060 `StdSigData` item as sent over WalletConnect (all bytes base64). */
-export interface WireStdSigData {
-  data: string
-  signer: string
-  domain: string
-  authenticatorData: string
-  scope: number
-  encoding: string
-  requestId?: string
-  hdPath?: string
-}
-
-export type SignDataResponse = Array<{ signature: string } | null | undefined>
-
-export class SessionError extends Error {
-  constructor(message: string) {
-    super(message)
-    this.name = 'SessionError'
-  }
-}
-
-// ---------- Adapter ------------------------------------------------ //
 
 export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
-  private client: SignClient | null = null
-  private modal: WalletConnectModal | null = null
-  private session: SessionTypes.Struct | null = null
-
-  private readonly clientOptions: {
-    projectId: string
-    relayUrl: string
-    metadata: SignClientTypes.Metadata
-  }
-  private readonly modalOptions: ModalOptions
-  private readonly onDisplayUri: BiatecWalletOptions['onDisplayUri']
-  private readonly enableSignData: boolean
-  private readonly extraChains: string[]
+  private readonly walletConnect: WalletConnectTransport
+  private readonly liquid: LiquidTransport | null
+  private readonly userOnDisplayUri: BiatecWalletOptions['onDisplayUri']
+  private activeMethod: BiatecMethod | null = null
 
   constructor(params: AdapterConstructorParams<BiatecWalletOptions>) {
     super(params)
@@ -139,27 +89,18 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       throw new Error('Missing required option: projectId')
     }
 
-    const {
-      projectId,
-      relayUrl = DEFAULT_RELAY_URL,
-      metadata,
-      onDisplayUri,
-      enableSignData = true,
-      chains = [],
-      ...modalOptions
-    } = this.options
+    const { onDisplayUri, liquid, enableSignData = true, ...walletConnectOptions } = this.options
 
-    this.clientOptions = {
-      projectId,
-      relayUrl,
-      metadata: { ...getWindowMetadata(), ...metadata }
-    }
-    this.modalOptions = modalOptions
-    this.onDisplayUri = onDisplayUri
-    this.enableSignData = enableSignData
-    this.extraChains = chains
-
+    this.userOnDisplayUri = onDisplayUri
     this.canSignData = enableSignData
+
+    const ctx = this.buildTransportContext()
+    this.walletConnect = new WalletConnectTransport(ctx, {
+      ...walletConnectOptions,
+      enableSignData
+    })
+    this.liquid =
+      liquid === false ? null : new LiquidTransport(ctx, { enableSignData, ...(liquid ?? {}) })
   }
 
   static defaultMetadata: WalletMetadata = {
@@ -167,366 +108,165 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     icon: ICON
   }
 
-  // ---------- Chains ------------------------------------------------ //
+  private buildTransportContext(): TransportContext {
+    return {
+      logger: this.logger,
+      store: this.store,
+      getMetadataName: () => this.metadata.name,
+      getAddresses: () => this.addresses,
+      getActiveNetworkConfig: () => this.activeNetworkConfig,
+      getActiveNetwork: () => this.activeNetwork,
+      createStdSignData: this.createStdSignData,
+      onDisconnect: this.onDisconnect
+    }
+  }
 
-  /** CAIP-2 chain id of the currently active network. */
+  // ---------- WalletConnect-specific accessors ----------------------- //
+
+  /** CAIP-2 chain id of the currently active network (WalletConnect transport). */
   public get activeChainId(): string {
-    const network = this.activeNetworkConfig
-    if (!network?.caipChainId) {
-      this.logger.warn(`No CAIP-2 chain ID found for network: ${this.activeNetwork}`)
-      return ''
-    }
-    return network.caipChainId
+    return this.walletConnect.activeChainId
   }
 
-  /**
-   * Every CAIP-2 chain id known to the WalletManager plus `options.chains`,
-   * de-duplicated, active chain first.
-   */
+  /** Every CAIP-2 chain id the WalletConnect transport would request (active chain first). */
   public get supportedChainIds(): string[] {
-    const configured = Object.values(this.store.getState().networkConfig)
-      .map((config) => config.caipChainId)
-      .filter((id): id is string => typeof id === 'string' && id.length > 0)
-    const active = this.activeChainId
-    return [...new Set([active, ...configured, ...this.extraChains].filter(Boolean))]
+    return this.walletConnect.supportedChainIds
   }
 
-  /** Whether the live session advertises `algo_signData`. */
+  /** Whether the live WalletConnect session advertises `algo_signData`. */
   public get sessionSupportsSignData(): boolean {
-    return this.session?.namespaces.algorand?.methods.includes(SIGN_DATA_METHOD) ?? false
+    return this.walletConnect.sessionSupportsSignData
   }
 
-  // ---------- WalletConnect plumbing -------------------------------- //
+  // ---------- Liquid Auth-specific accessors -------------------------- //
 
-  private async initializeClient(): Promise<SignClient> {
-    this.logger.info('Initializing WalletConnect client...')
-    const { SignClient } = await import('@walletconnect/sign-client')
-    const client = await SignClient.init(this.clientOptions)
-
-    client.on('session_event', (args) => {
-      this.logger.info('EVENT: session_event', args)
-    })
-
-    client.on('session_update', ({ topic, params }) => {
-      this.logger.info('EVENT: session_update', { topic, params })
-      const session = client.session.get(topic)
-      this.onSessionConnected({ ...session, namespaces: params.namespaces })
-    })
-
-    client.on('session_delete', () => {
-      this.logger.info('EVENT: session_delete')
-      this.session = null
-      this.onDisconnect()
-    })
-
-    this.client = client
-    this.logger.info('WalletConnect client initialized')
-    return client
+  /** Metadata the wallet announced in the Liquid Auth hello handshake, if any. */
+  public get walletInfo(): HelloResult | null {
+    return this.liquid?.walletInfo ?? null
   }
 
-  private async initializeModal(): Promise<WalletConnectModal> {
-    this.logger.info('Initializing WalletConnect modal...')
-    const { WalletConnectModal } = await import('@walletconnect/modal')
-    const modal = new WalletConnectModal({
-      projectId: this.clientOptions.projectId,
-      ...this.modalOptions
+  /** Whether the Liquid Auth WebRTC data channel is currently open. */
+  public get isChannelOpen(): boolean {
+    return this.liquid?.isChannelOpen ?? false
+  }
+
+  // ---------- Method picker / URI display glue ------------------------ //
+
+  private promptMethodChoice(): Promise<BiatecMethod> {
+    return new Promise((resolve, reject) => {
+      openMethodPickerDialog(
+        (method) => resolve(method),
+        () => reject(new SessionError('Connection cancelled'))
+      )
     })
-    modal.subscribeModal((state) => this.logger.info(`Modal ${state.open ? 'open' : 'closed'}`))
-    this.modal = modal
-    return modal
   }
 
-  private getClient(): Promise<SignClient> {
-    return this.client ? Promise.resolve(this.client) : this.initializeClient()
-  }
-
-  private onSessionConnected(session: SessionTypes.Struct): WalletAccount[] {
-    const caipAccounts = session.namespaces.algorand?.accounts ?? []
-
-    if (!caipAccounts.length) {
-      this.logger.error('No accounts found!')
-      throw new Error('No accounts found!')
+  private buildWalletConnectHandlers(): WalletConnectConnectHandlers {
+    const userOnDisplayUri = this.userOnDisplayUri
+    return {
+      ...(userOnDisplayUri
+        ? { onDisplayUri: (uri: string) => userOnDisplayUri(uri, { method: 'walletconnect' }) }
+        : {}),
+      openFallbackDialog: (uri) => openUriDisplayDialog(uri, 'walletconnect', () => undefined)
     }
-
-    // Same address can appear once per approved chain — collapse to unique addresses.
-    const addresses = [...new Set(caipAccounts.map((account) => account.split(':').pop()!))]
-
-    const walletAccounts: WalletAccount[] = addresses.map((address, idx) => ({
-      name: `${this.metadata.name} Account ${idx + 1}`,
-      address
-    }))
-
-    const walletState = this.store.getWalletState()
-
-    if (!walletState) {
-      const newWalletState: WalletState = {
-        accounts: walletAccounts,
-        activeAccount: walletAccounts[0]
-      }
-      this.store.addWallet(newWalletState)
-      this.logger.info('Connected', newWalletState)
-    } else if (!compareAccounts(walletAccounts, walletState.accounts)) {
-      this.logger.warn('Session accounts mismatch, updating accounts', {
-        prev: walletState.accounts,
-        current: walletAccounts
-      })
-      this.store.setAccounts(walletAccounts)
-    }
-
-    this.session = session
-    return walletAccounts
   }
 
-  // ---------- Public: session lifecycle ----------------------------- //
-
-  public connect = async (): Promise<WalletAccount[]> => {
-    this.logger.info('Connecting...')
-    try {
-      const activeChainId = this.activeChainId
-      if (!activeChainId) {
-        throw new Error(
-          `Network "${this.activeNetwork}" has no caipChainId; add one to its NetworkConfig`
-        )
-      }
-
-      const client = await this.getClient()
-
-      const methods = this.enableSignData ? [SIGN_TXN_METHOD, SIGN_DATA_METHOD] : [SIGN_TXN_METHOD]
-
-      const { uri, approval } = await client.connect({
-        requiredNamespaces: {
-          algorand: {
-            chains: [activeChainId],
-            methods: [SIGN_TXN_METHOD],
-            events: []
+  private buildLiquidHandlers(): LiquidConnectHandlers {
+    const userOnDisplayUri = this.userOnDisplayUri
+    return {
+      ...(userOnDisplayUri
+        ? {
+            onDisplayUri: (uri: string, info: { requestId: string; origin: string }) =>
+              userOnDisplayUri(uri, {
+                method: 'liquid',
+                requestId: info.requestId,
+                origin: info.origin
+              })
           }
-        },
-        optionalNamespaces: {
-          algorand: {
-            chains: this.supportedChainIds,
-            methods,
-            events: SESSION_EVENTS
-          }
-        }
-      })
-
-      if (!uri) {
-        this.logger.error('No URI found')
-        throw new Error('No URI found')
-      }
-
-      if (this.onDisplayUri) {
-        await this.onDisplayUri(uri)
-      } else {
-        const modal = this.modal ?? (await this.initializeModal())
-        await modal.openModal({ uri })
-      }
-
-      const session = await approval()
-      const walletAccounts = this.onSessionConnected(session)
-
-      this.logger.info('Connected successfully')
-      return walletAccounts
-    } catch (error: any) {
-      this.logger.error('Error connecting:', error?.message ?? error)
-      throw error
-    } finally {
-      this.modal?.closeModal()
+        : {}),
+      openFallbackDialog: (uri, onCancel) => openUriDisplayDialog(uri, 'liquid', onCancel)
     }
+  }
+
+  // ---------- Public: session lifecycle ------------------------------ //
+
+  public connect = async (args?: ConnectArgs): Promise<WalletAccount[]> => {
+    const method = args?.method ?? (this.liquid ? await this.promptMethodChoice() : 'walletconnect')
+
+    const accounts =
+      method === 'liquid' && this.liquid
+        ? await this.liquid.connect(this.buildLiquidHandlers())
+        : await this.walletConnect.connect(this.buildWalletConnectHandlers())
+
+    this.activeMethod = method === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
+    return accounts
   }
 
   public disconnect = async (): Promise<void> => {
-    this.logger.info('Disconnecting...')
-    try {
-      this.onDisconnect()
-      if (this.client && this.session) {
-        const topic = this.session.topic
-        this.session = null
-        await this.client.disconnect({
-          topic,
-          reason: { message: 'User disconnected.', code: 6000 }
-        })
-      }
-      this.logger.info('Disconnected')
-    } catch (error: any) {
-      this.logger.error('Error disconnecting:', error?.message ?? error)
-      throw error
+    this.onDisconnect()
+    if (this.activeMethod === 'liquid' && this.liquid) {
+      await this.liquid.disconnect()
+    } else {
+      await this.walletConnect.disconnect()
     }
+    this.activeMethod = null
   }
 
   public resumeSession = async (): Promise<void> => {
-    try {
-      const walletState = this.store.getWalletState()
+    const walletState = this.store.getWalletState()
+    if (!walletState) {
+      this.logger.info('No session to resume')
+      return
+    }
 
-      if (!walletState) {
-        this.logger.info('No session to resume')
+    const metadata = (walletState.activeAccount ?? walletState.accounts[0])?.metadata as
+      | Partial<BiatecAccountMetadata>
+      | undefined
+
+    if (metadata?.method === 'liquid') {
+      if (!this.liquid) {
+        this.logger.warn('Persisted session used Liquid Auth, but it is disabled; disconnecting')
+        this.onDisconnect()
         return
       }
-
-      this.logger.info('Resuming session...')
-      const client = await this.getClient()
-
-      if (client.session.length) {
-        const lastKey = client.session.keys[client.session.keys.length - 1]
-        this.onSessionConnected(client.session.get(lastKey))
-        this.logger.info('Session resumed successfully')
-      } else {
-        this.logger.warn('No WalletConnect session found in storage, disconnecting')
+      if (typeof metadata.requestId !== 'string' || !metadata.requestId) {
+        this.logger.warn('Persisted Liquid Auth session has no requestId, disconnecting')
         this.onDisconnect()
+        return
       }
-    } catch (error: any) {
-      this.logger.error('Error resuming session:', error?.message ?? error)
-      this.onDisconnect()
-      throw error
+      this.activeMethod = 'liquid'
+      await this.liquid.resume({
+        requestId: metadata.requestId,
+        origin: metadata.origin ?? BIATEC_WALLET_URL
+      })
+      return
     }
+
+    this.activeMethod = 'walletconnect'
+    await this.walletConnect.resume()
   }
 
-  // ---------- Public: transaction signing (ARC-0001) ---------------- //
-
-  private processTxns(
-    txnGroup: algosdk.Transaction[],
-    indexesToSign?: number[]
-  ): WalletTransaction[] {
-    return txnGroup.map((txn, index) => {
-      const isIndexMatch = !indexesToSign || indexesToSign.includes(index)
-      const canSignTxn = this.addresses.includes(txn.sender.toString())
-      const txnString = byteArrayToBase64(txn.toByte())
-      return isIndexMatch && canSignTxn ? { txn: txnString } : { txn: txnString, signers: [] }
-    })
-  }
-
-  private processEncodedTxns(
-    txnGroup: Uint8Array[],
-    indexesToSign?: number[]
-  ): WalletTransaction[] {
-    return txnGroup.map((txnBuffer, index) => {
-      const isSigned = isSignedTxn(algosdk.msgpackRawDecode(txnBuffer))
-      const txn = isSigned
-        ? algosdk.decodeSignedTransaction(txnBuffer).txn
-        : algosdk.decodeUnsignedTransaction(txnBuffer)
-
-      const isIndexMatch = !indexesToSign || indexesToSign.includes(index)
-      const canSignTxn = !isSigned && this.addresses.includes(txn.sender.toString())
-      const txnString = byteArrayToBase64(txn.toByte())
-      return isIndexMatch && canSignTxn ? { txn: txnString } : { txn: txnString, signers: [] }
-    })
-  }
+  // ---------- Public: transaction signing (ARC-0001) ------------------ //
 
   public signTransactions = async <T extends algosdk.Transaction[] | Uint8Array[]>(
     txnGroup: T | T[],
     indexesToSign?: number[]
   ): Promise<(Uint8Array | null)[]> => {
-    try {
-      if (!this.session) {
-        this.logger.error('No session found!')
-        throw new SessionError('No session found!')
-      }
-
-      this.logger.debug('Signing transactions...', { txnGroup, indexesToSign })
-
-      const txnsToSign: WalletTransaction[] = isTransactionArray(txnGroup)
-        ? this.processTxns(flattenTxnGroup(txnGroup), indexesToSign)
-        : this.processEncodedTxns(flattenTxnGroup(txnGroup as Uint8Array[]), indexesToSign)
-
-      const client = await this.getClient()
-      const request = formatJsonRpcRequest(SIGN_TXN_METHOD, [txnsToSign])
-
-      this.logger.debug('Sending transactions to wallet...', txnsToSign)
-
-      const signTxnsResult = await client.request<SignTxnsResponse>({
-        chainId: this.activeChainId,
-        topic: this.session.topic,
-        request
-      })
-
-      this.logger.debug('Received signed transactions from wallet', signTxnsResult)
-
-      const signedTxns = signTxnsResult.reduce<Uint8Array[]>((acc, value) => {
-        if (value) {
-          if (typeof value === 'string') acc.push(base64ToByteArray(value))
-          else if (value instanceof Uint8Array) acc.push(value)
-          else if (Array.isArray(value)) acc.push(new Uint8Array(value))
-          else this.logger.warn('Unexpected type in signTxnsResult', value)
-        }
-        return acc
-      }, [])
-
-      // ARC-0001: null for transactions the wallet was asked not to sign.
-      const result = txnsToSign.map<Uint8Array | null>((txn) => {
-        if (txn.signers && txn.signers.length === 0) return null
-        return signedTxns.shift() ?? null
-      })
-
-      this.logger.debug('Transactions signed successfully', result)
-      return result
-    } catch (error: any) {
-      this.logger.error('Error signing transactions:', error?.message ?? error)
-      throw error
+    if (this.activeMethod === 'liquid' && this.liquid) {
+      return this.liquid.signTransactions(txnGroup, indexesToSign)
     }
+    return this.walletConnect.signTransactions(txnGroup, indexesToSign)
   }
 
-  // ---------- Public: data signing (ARC-0060) ----------------------- //
+  // ---------- Public: data signing (ARC-0060) -------------------------- //
 
   public signData = async (
     data: string,
     metadata: StdSignMetadata
   ): Promise<StdSignDataResponse> => {
-    try {
-      if (!this.enableSignData) {
-        throw new SignDataError('Method not supported: signData (disabled by options)', 4200)
-      }
-      if (!this.session) {
-        throw new SessionError('No session found!')
-      }
-      if (!this.sessionSupportsSignData) {
-        throw new SignDataError('Connected wallet session does not support algo_signData', 4200)
-      }
-
-      this.logger.debug('Signing data...', { data, metadata })
-
-      const stdSignData = await this.createStdSignData(data)
-
-      const item: WireStdSigData = {
-        data: stdSignData.data,
-        signer: byteArrayToBase64(stdSignData.signer),
-        domain: stdSignData.domain,
-        authenticatorData: byteArrayToBase64(stdSignData.authenticatorData),
-        scope: metadata.scope,
-        encoding: metadata.encoding
-      }
-      if (stdSignData.requestId) item.requestId = stdSignData.requestId
-      if (stdSignData.hdPath) item.hdPath = stdSignData.hdPath
-
-      const client = await this.getClient()
-      const request = formatJsonRpcRequest(SIGN_DATA_METHOD, [[item]])
-
-      const response = await client.request<SignDataResponse>({
-        chainId: this.activeChainId,
-        topic: this.session.topic,
-        request
-      })
-
-      const signature = response?.[0]?.signature
-      if (!signature) {
-        throw new SignDataError('Wallet returned no signature', 4001)
-      }
-
-      const result: StdSignDataResponse = {
-        ...stdSignData,
-        signature: base64ToByteArray(signature)
-      }
-
-      this.logger.debug('Data signed successfully', result)
-      return result
-    } catch (error: any) {
-      if (error instanceof SignDataError || error instanceof SessionError) {
-        this.logger.error('Error signing data:', error.message)
-        throw error
-      }
-      // WalletConnect JSON-RPC error 5000 = user rejected.
-      const code = error?.code === 5000 ? 4001 : 4300
-      this.logger.error('Error signing data:', error?.message ?? error)
-      throw new SignDataError(error?.message ?? 'Unknown error signing data', code, error)
+    if (this.activeMethod === 'liquid' && this.liquid) {
+      return this.liquid.signData(data, metadata)
     }
+    return this.walletConnect.signData(data, metadata)
   }
 }

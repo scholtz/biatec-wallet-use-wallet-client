@@ -14,34 +14,81 @@ Wallet. For the researched background this design is based on, see [RESEARCH.md]
    Stable id, full store/network access, works unmodified with every framework binding.
 
 We use (2). We also don't subclass the official `@txnlab/use-wallet-walletconnect` adapter, even
-though the transport is the same WalletConnect v2 client — that adapter's `client`/`session`
-fields are `private`, so nothing outside it can add ARC-0060 support or the multi-chain session
-behavior described below. `BiatecWalletAdapter` reimplements the same transaction-signing flow
-(same wire format, same helper functions from `@txnlab/use-wallet/adapter`) and adds `signData()`
-and eager multi-chain negotiation on top.
+though one of our two transports is the same WalletConnect v2 client — that adapter's
+`client`/`session` fields are `private`, so nothing outside it can add ARC-0060 support or the
+multi-chain session behavior described below. `BiatecWalletAdapter` reimplements the same
+transaction-signing flow (same wire format, same helper functions from `@txnlab/use-wallet/adapter`)
+and adds `signData()` and eager multi-chain negotiation on top.
 
-## Session lifecycle
+## One wallet, two transports
+
+`BiatecWalletAdapter` is a single `BaseWallet` subclass (id `biatec`) that owns two transport
+implementations — plain classes, not separate `BaseWallet`s — and dispatches to whichever one a
+session is using:
+
+- `src/transports/walletconnect-transport.ts` — `WalletConnectTransport`, the WalletConnect v2
+  relay flow described below.
+- `src/transports/liquid-transport.ts` — `LiquidTransport`, the Liquid Auth / WebRTC flow
+  described in [Liquid Auth transport](#liquid-auth-transport).
+
+Both transports receive a `TransportContext` (`src/transports/types.ts`) built once in the
+adapter's constructor: bound references to `this.store`, `this.logger`, `this.addresses`,
+`this.activeNetworkConfig`, `this.createStdSignData` and `this.onDisconnect`. Transports read and
+mutate adapter state entirely through this context — they never touch `BaseWallet` internals
+directly, since only the outer adapter is allowed to extend `BaseWallet`.
+
+### Unified `connect()` and the method picker
+
+```ts
+connect(args?: { method?: 'walletconnect' | 'liquid' })
+```
+
+- `args.method` given → skip straight to that transport.
+- No `args`, both transports enabled → `src/method-picker-dialog.ts`'s `openMethodPickerDialog()`
+  shows a small vanilla-DOM dialog (Biatec logo, "Connect with WalletConnect" / "Connect with
+  Liquid Auth (Passkey)", Cancel) and resolves with the user's choice, or rejects if cancelled.
+- No `args`, Liquid disabled (`liquid: false`) → always WalletConnect, no picker.
+
+Whichever transport is chosen calls back into the adapter's `onDisplayUri` (if the consumer
+supplied one) with a `BiatecDisplayUriInfo` (`{ method, requestId?, origin? }`) — enough to label
+a custom QR dialog per transport — or, if none was supplied, opens
+`openUriDisplayDialog()` (the same module) as the default "here's your link" UI for both
+transports. `useWalletConnectModal: true` opts back into `@walletconnect/modal`'s wallet-explorer
+modal for the WalletConnect step specifically.
+
+Every persisted `WalletAccount` is tagged with `BiatecAccountMetadata` — `{ method:
+'walletconnect' }` or `{ method: 'liquid', requestId, origin }` — so `resumeSession()` can read
+which transport a previous session used and dispatch to the matching transport's own resume
+logic without guessing. Accounts with no `method` tag (from a pre-merge persisted session) fall
+back to WalletConnect.
+
+## WalletConnect transport session lifecycle
 
 ```mermaid
 sequenceDiagram
     participant App as dApp
     participant Adapter as BiatecWalletAdapter
+    participant Transport as WalletConnectTransport
     participant WC as WalletConnect relay
     participant Biatec as Biatec Wallet
 
-    App->>Adapter: connect()
-    Adapter->>Adapter: SignClient.init() (lazy import)
-    Adapter->>WC: client.connect({ requiredNamespaces, optionalNamespaces })
-    WC-->>Adapter: { uri, approval }
+    App->>Adapter: connect({ method: 'walletconnect' })
+    Adapter->>Transport: connect(handlers)
+    Transport->>Transport: SignClient.init() (lazy import)
+    Transport->>WC: client.connect({ requiredNamespaces, optionalNamespaces })
+    WC-->>Transport: { uri, approval }
     alt onDisplayUri set
-        Adapter->>App: onDisplayUri(uri)
+        Transport->>App: onDisplayUri(uri)
+    else useWalletConnectModal
+        Transport->>Transport: open WalletConnect modal with uri
     else default
-        Adapter->>Adapter: open WalletConnect modal with uri
+        Transport->>Transport: open built-in URI dialog
     end
     App-->>Biatec: user scans / pastes uri
     Biatec->>WC: approve session
-    WC-->>Adapter: approval() resolves with SessionTypes.Struct
-    Adapter->>Adapter: store.addWallet({ accounts, activeAccount })
+    WC-->>Transport: approval() resolves with SessionTypes.Struct
+    Transport->>Transport: store.addWallet({ accounts: [...], activeAccount })
+    Transport-->>Adapter: WalletAccount[]
     Adapter-->>App: WalletAccount[]
 ```
 
@@ -137,47 +184,55 @@ this specific request" (`4001`).
 
 ## Testing strategy
 
-`src/adapter.test.ts` mocks `@walletconnect/sign-client` and `@walletconnect/modal` at the module
-level (`vi.mock`) and drives the adapter through `@txnlab/use-wallet/testing`'s
-`createTestHarness()`, which provides a real `@tanstack/store`-backed `AdapterStoreAccessor`
-without needing a full `WalletManager`. This exercises the actual store-mutation logic (accounts
-get de-duplicated and persisted correctly) while keeping the WalletConnect network layer
-deterministic and instant. See [CONTRIBUTING.md](../CONTRIBUTING.md#tests) for how to extend it.
+`src/adapter.test.ts` covers dispatch logic only (picker shown/skipped, `resumeSession()`
+branching on account metadata). The transports have their own suites —
+`src/transports/walletconnect-transport.test.ts` and `src/transports/liquid-transport.test.ts` —
+each driving the full `BiatecWalletAdapter` through `@txnlab/use-wallet/testing`'s
+`createTestHarness()` with an explicit `connect({ method: '...' })` to bypass the picker, and
+mocking that transport's SDKs at the module level (`vi.mock('@walletconnect/sign-client', ...)`,
+`vi.mock('socket.io-client', ...)`). This exercises the actual store-mutation logic (accounts get
+de-duplicated and persisted correctly) while keeping the network layer deterministic and instant.
+See [CONTRIBUTING.md](../CONTRIBUTING.md#tests) for how to extend it.
 
 ## Liquid Auth transport
 
-`src/liquid/` is a second, independent adapter (`BiatecLiquidAdapter`, id `biatec-liquid`) that
-replaces the WalletConnect relay with the Algorand Foundation's Liquid Auth flow:
+`src/transports/liquid-transport.ts`'s `LiquidTransport` replaces the WalletConnect relay with the
+Algorand Foundation's Liquid Auth flow, used whenever `connect()` resolves to `'liquid'`:
 
 ```mermaid
 sequenceDiagram
     participant App as dApp
-    participant Adapter as BiatecLiquidAdapter
+    participant Adapter as BiatecWalletAdapter
+    participant Transport as LiquidTransport
     participant Service as Liquid Auth service
     participant Wallet as Biatec Wallet
 
-    App->>Adapter: connect()
-    Adapter->>Adapter: requestId = UUID, liquid:// link → onDisplayUri / dialog
-    Adapter->>Service: socket.io link{requestId} + arm offer listener
+    App->>Adapter: connect({ method: 'liquid' })
+    Adapter->>Transport: connect(handlers)
+    Transport->>Transport: requestId = UUID, liquid:// link → onDisplayUri / dialog
+    Transport->>Service: socket.io link{requestId} + arm offer listener
     Wallet->>Service: passkey attestation/assertion + liquid extension {address, requestId}
-    Service-->>Adapter: link ack {wallet}
+    Service-->>Transport: link ack {wallet}
     Wallet->>Service: offer-description / offer-candidate
-    Service-->>Adapter: relayed
-    Adapter->>Service: answer-description / answer-candidate
-    Wallet-->>Adapter: RTCDataChannel "liquid" open
-    Adapter->>Wallet: biatec:hello:request
-    Adapter-->>App: WalletAccount[] (address from the link ack)
+    Service-->>Transport: relayed
+    Transport->>Service: answer-description / answer-candidate
+    Wallet-->>Transport: RTCDataChannel "liquid" open
+    Transport->>Wallet: biatec:hello:request
+    Transport-->>Adapter: WalletAccount[] (address from the link ack)
+    Adapter-->>App: WalletAccount[]
 ```
 
-- `protocol.ts` — pure wire format (ARC-0027 envelope, CBOR via a lazy `cbor-x` import,
-  base64url, deep links). Mirrored verbatim in the wallet repository.
-- `signaling.ts` — `LiquidSignalClient`: the answer-role subset of the Liquid Auth signaling
-  protocol over `socket.io-client` (lazy import, websocket transport, `withCredentials`).
-- `adapter.ts` — session lifecycle, request/response correlation with timeouts, ARC-0001 and
-  ARC-0060 mapping. `resumeSession()` restores the account from the persisted
-  `{ requestId, origin }` metadata and re-pairs lazily on the first request, because a WebRTC
-  channel cannot survive a reload.
-- `dialog.ts` — dependency-free fallback dialog (copy link) when no `onDisplayUri` is given.
+- `src/liquid/protocol.ts` — pure wire format (ARC-0027 envelope, CBOR via a lazy `cbor-x`
+  import, base64url, deep links). Mirrored verbatim in the wallet repository.
+- `src/liquid/signaling.ts` — `LiquidSignalClient`: the answer-role subset of the Liquid Auth
+  signaling protocol over `socket.io-client` (lazy import, websocket transport, `withCredentials`).
+- `src/transports/liquid-transport.ts` — session lifecycle, request/response correlation with
+  timeouts, ARC-0001 and ARC-0060 mapping. The adapter's `resumeSession()` restores the account
+  from the persisted `{ method: 'liquid', requestId, origin }` metadata and calls
+  `LiquidTransport.resume()`, which just remembers the pairing; re-pairing happens lazily on the
+  first `signTransactions`/`signData` call, because a WebRTC channel cannot survive a reload.
+- `src/method-picker-dialog.ts` — dependency-free dialog (copy link) used as the default "here's
+  your link" UI when no `onDisplayUri` is given, shared with the WalletConnect transport.
 
 The full protocol, its security model and the service deployment constraints are in
 [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).

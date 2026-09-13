@@ -1,5 +1,5 @@
 /**
- * Biatec Wallet adapter for @txnlab/use-wallet v5 — **Liquid Auth transport**.
+ * Liquid Auth transport for the unified Biatec Wallet adapter.
  *
  * Pairs with Biatec Wallet through a Liquid Auth signaling service (passkey-authenticated
  * linking, then a direct WebRTC data channel negotiated with public Google STUN servers) and
@@ -8,21 +8,16 @@
  */
 import algosdk from 'algosdk'
 import {
-  BaseWallet,
   SignDataError,
   flattenTxnGroup,
   isSignedTxn,
   isTransactionArray,
-  type AdapterConstructorParams,
   type StdSignDataResponse,
   type StdSignMetadata,
   type WalletAccount,
-  type WalletMetadata,
   type WalletState
 } from '@txnlab/use-wallet/adapter'
-import { ICON } from '../icon'
 import { getWindowMetadata } from '../window-metadata'
-import { openLiquidPairingDialog } from './dialog'
 import {
   DEFAULT_ICE_SERVERS,
   DEFAULT_LIQUID_ORIGIN,
@@ -46,27 +41,15 @@ import {
   type SignDataResult,
   type SignTransactionsParams,
   type SignTransactionsResult
-} from './protocol'
-import { LiquidSignalClient, withTimeout, type LiquidPeerSession } from './signaling'
+} from '../liquid/protocol'
+import { LiquidSignalClient, withTimeout, type LiquidPeerSession } from '../liquid/signaling'
+import type { BiatecAccountMetadata, DialogHandle, TransportContext } from './types'
 
-export const WALLET_ID_LIQUID = 'biatec-liquid' as const
-
-/** Account metadata persisted by use-wallet so a session can be resumed after a reload. */
-export interface LiquidAccountMetadata {
-  requestId: string
-  origin: string
-}
-
-export interface BiatecLiquidOptions {
+export interface LiquidTransportOptions {
   /** Liquid Auth service the wallet authenticates against. Default: Biatec's hosted service. */
   origin?: string
   /** ICE servers for the WebRTC connection. Default: public Google STUN servers. */
   iceServers?: RTCIceServer[]
-  /**
-   * Receive the `liquid://` pairing link to render your own QR code. When omitted a minimal
-   * built-in dialog shows the link with a copy button (no QR).
-   */
-  onDisplayUri?: (uri: string, info: { requestId: string; origin: string }) => void | Promise<void>
   /** dApp metadata announced to the wallet in the hello handshake. Defaults are read from the page. */
   metadata?: Partial<LiquidPeerMetadata>
   /** ARC-0027 provider id carried in every message. Default: a random UUID per adapter instance. */
@@ -81,6 +64,13 @@ export interface BiatecLiquidOptions {
   requestTimeoutMs?: number
 }
 
+export interface LiquidConnectHandlers {
+  /** Pre-bound to include `{ method: 'liquid' }`; overrides the built-in dialog. */
+  onDisplayUri?: (uri: string, info: { requestId: string; origin: string }) => void | Promise<void>
+  /** Used when there's no `onDisplayUri`. */
+  openFallbackDialog: (uri: string, onCancel: () => void) => DialogHandle
+}
+
 interface PendingRequest {
   resolve: (response: LiquidResponseMessage) => void
   reject: (error: Error) => void
@@ -92,7 +82,7 @@ const DEFAULT_RECONNECT_TIMEOUT_MS = 30 * 1000
 const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
 const HELLO_TIMEOUT_MS = 10 * 1000
 
-export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
+export class LiquidTransport {
   private signal: LiquidSignalClient | null = null
   private session: LiquidPeerSession | null = null
   private requestId: string | null = null
@@ -101,7 +91,6 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
 
   private readonly origin: string
   private readonly iceServers: RTCIceServer[]
-  private readonly onDisplayUri: BiatecLiquidOptions['onDisplayUri']
   private readonly dappMetadata: LiquidPeerMetadata
   private readonly providerId: string
   private readonly enableSignData: boolean
@@ -109,24 +98,18 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
   private readonly reconnectTimeoutMs: number
   private readonly requestTimeoutMs: number
 
-  constructor(params: AdapterConstructorParams<BiatecLiquidOptions>) {
-    super(params)
-    const options = this.options ?? {}
+  constructor(
+    private readonly ctx: TransportContext,
+    options: LiquidTransportOptions
+  ) {
     this.origin = (options.origin ?? DEFAULT_LIQUID_ORIGIN).replace(/\/+$/, '')
     this.iceServers = options.iceServers ?? DEFAULT_ICE_SERVERS
-    this.onDisplayUri = options.onDisplayUri
     this.dappMetadata = { ...getWindowMetadata(), ...options.metadata }
     this.providerId = options.providerId ?? crypto.randomUUID()
     this.enableSignData = options.enableSignData ?? true
     this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
     this.reconnectTimeoutMs = options.reconnectTimeoutMs ?? DEFAULT_RECONNECT_TIMEOUT_MS
     this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
-    this.canSignData = this.enableSignData
-  }
-
-  static defaultMetadata: WalletMetadata = {
-    name: 'Biatec Wallet (Liquid Auth)',
-    icon: ICON
   }
 
   /** Metadata the wallet announced in the hello handshake, if any. */
@@ -140,15 +123,15 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
 
   // ---------- Session lifecycle ------------------------------------- //
 
-  public connect = async (): Promise<WalletAccount[]> => {
-    this.logger.info('Connecting via Liquid Auth...')
+  public connect = async (handlers: LiquidConnectHandlers): Promise<WalletAccount[]> => {
+    this.ctx.logger.info('Connecting via Liquid Auth...')
     this.teardownSession()
     const requestId = crypto.randomUUID()
     const uri = generateLiquidDeepLink(this.origin, requestId)
     const signal = new LiquidSignalClient({
       origin: this.origin,
       iceServers: this.iceServers,
-      log: (message, ...args) => this.logger.debug(message, ...args)
+      log: (message, ...args) => this.ctx.logger.debug(message, ...args)
     })
     this.signal = signal
 
@@ -159,21 +142,21 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
     const pairing = signal.pair(requestId, this.connectTimeoutMs)
     pairing.catch(() => undefined) // surfaced through the race below
 
-    let dialog: { close(): void } | undefined
+    let dialog: DialogHandle | undefined
     try {
-      if (this.onDisplayUri) {
-        await this.onDisplayUri(uri, { requestId, origin: this.origin })
+      if (handlers.onDisplayUri) {
+        await handlers.onDisplayUri(uri, { requestId, origin: this.origin })
       } else {
-        dialog = openLiquidPairingDialog(uri, () => cancel?.())
+        dialog = handlers.openFallbackDialog(uri, () => cancel?.())
       }
       const session = await Promise.race([pairing, cancelled])
       this.attachSession(session, requestId)
       const accounts = this.storeAccounts(session.wallet, requestId)
       await this.hello()
-      this.logger.info('Connected via Liquid Auth', { wallet: session.wallet, requestId })
+      this.ctx.logger.info('Connected via Liquid Auth', { wallet: session.wallet, requestId })
       return accounts
     } catch (error: any) {
-      this.logger.error('Error connecting:', error?.message ?? error)
+      this.ctx.logger.error('Error connecting:', error?.message ?? error)
       this.teardownSession()
       throw error
     } finally {
@@ -182,28 +165,16 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
   }
 
   public disconnect = async (): Promise<void> => {
-    this.logger.info('Disconnecting...')
-    this.onDisconnect()
+    this.ctx.logger.info('Disconnecting...')
     this.teardownSession()
     this.requestId = null
     this.peerInfo = null
   }
 
-  public resumeSession = async (): Promise<void> => {
-    const walletState = this.store.getWalletState()
-    if (!walletState) {
-      this.logger.info('No session to resume')
-      return
-    }
-    const metadata = this.readAccountMetadata(walletState)
-    if (!metadata) {
-      this.logger.warn('Persisted Liquid Auth session has no requestId, disconnecting')
-      this.onDisconnect()
-      return
-    }
+  public resume = async (metadata: { requestId: string; origin: string }): Promise<void> => {
     // WebRTC cannot survive a reload; remember the pairing and reconnect lazily on first use.
     this.requestId = metadata.requestId
-    this.logger.info('Liquid Auth session restored (lazy reconnect)', metadata)
+    this.ctx.logger.info('Liquid Auth session restored (lazy reconnect)', metadata)
   }
 
   // ---------- Transaction signing (ARC-0001 over ARC-0027) --------- //
@@ -225,13 +196,13 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
 
       const txnsToSign: LiquidWalletTransaction[] = decoded.map(({ txn, isSigned }, index) => {
         const isIndexMatch = !indexesToSign || indexesToSign.includes(index)
-        const canSign = !isSigned && this.addresses.includes(txn.sender.toString())
+        const canSign = !isSigned && this.ctx.getAddresses().includes(txn.sender.toString())
         const entry: LiquidWalletTransaction = { txn: toBase64Url(txn.toByte()) }
         if (!(isIndexMatch && canSign)) entry.signers = []
         return entry
       })
 
-      this.logger.debug('Sending sign_transactions request...', txnsToSign)
+      this.ctx.logger.debug('Sending sign_transactions request...', txnsToSign)
       const result = await this.request<SignTransactionsParams, SignTransactionsResult>(
         LiquidReference.signTransactionsRequest,
         { providerId: this.providerId, txns: txnsToSign }
@@ -255,7 +226,7 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
         return bytes
       })
     } catch (error: any) {
-      this.logger.error('Error signing transactions:', error?.message ?? error)
+      this.ctx.logger.error('Error signing transactions:', error?.message ?? error)
       throw error
     }
   }
@@ -270,7 +241,7 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
       if (!this.enableSignData) {
         throw new SignDataError('Method not supported: signData (disabled by options)', 4200)
       }
-      const stdSignData = await this.createStdSignData(data)
+      const stdSignData = await this.ctx.createStdSignData(data)
       const item: LiquidStdSigData = {
         data: stdSignData.data,
         signer: toBase64Url(stdSignData.signer),
@@ -293,7 +264,7 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
       return { ...stdSignData, signature: fromBase64Url(signature) }
     } catch (error: any) {
       if (error instanceof SignDataError) {
-        this.logger.error('Error signing data:', error.message)
+        this.ctx.logger.error('Error signing data:', error.message)
         throw error
       }
       const code =
@@ -303,7 +274,7 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
               error.code === LiquidErrorCode.methodNotSupported
             ? 4200
             : 4300
-      this.logger.error('Error signing data:', error?.message ?? error)
+      this.ctx.logger.error('Error signing data:', error?.message ?? error)
       throw new SignDataError(error?.message ?? 'Unknown error signing data', code, error)
     }
   }
@@ -318,7 +289,7 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
     }
     const onGone = () => {
       if (this.session === session) {
-        this.logger.warn('Liquid Auth data channel closed')
+        this.ctx.logger.warn('Liquid Auth data channel closed')
         this.session = null
         this.rejectAllPending(
           new LiquidProviderError('Data channel closed', LiquidErrorCode.unknown)
@@ -335,29 +306,23 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
   private storeAccounts(address: string, requestId: string): WalletAccount[] {
     const accounts: WalletAccount[] = [
       {
-        name: `${this.metadata.name} Account 1`,
+        name: `${this.ctx.getMetadataName()} Account 1`,
         address,
-        metadata: { requestId, origin: this.origin } satisfies LiquidAccountMetadata
+        metadata: {
+          method: 'liquid',
+          requestId,
+          origin: this.origin
+        } satisfies BiatecAccountMetadata
       }
     ]
-    const walletState = this.store.getWalletState()
+    const walletState = this.ctx.store.getWalletState()
     if (!walletState) {
       const newState: WalletState = { accounts, activeAccount: accounts[0] }
-      this.store.addWallet(newState)
+      this.ctx.store.addWallet(newState)
     } else {
-      this.store.setAccounts(accounts)
+      this.ctx.store.setAccounts(accounts)
     }
     return accounts
-  }
-
-  private readAccountMetadata(walletState: WalletState): LiquidAccountMetadata | null {
-    const metadata = (walletState.activeAccount ?? walletState.accounts[0])?.metadata as
-      | Partial<LiquidAccountMetadata>
-      | undefined
-    if (metadata && typeof metadata.requestId === 'string' && metadata.requestId) {
-      return { requestId: metadata.requestId, origin: metadata.origin ?? this.origin }
-    }
-    return null
   }
 
   private async hello(): Promise<void> {
@@ -368,10 +333,10 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
         HELLO_TIMEOUT_MS
       )
       this.peerInfo = result
-      this.logger.debug('Wallet hello', result)
+      this.ctx.logger.debug('Wallet hello', result)
     } catch (error: any) {
       // Peers that only implement the ARC-0027 subset (no hello) are still fine.
-      this.logger.warn('Hello handshake not answered:', error?.message ?? error)
+      this.ctx.logger.warn('Hello handshake not answered:', error?.message ?? error)
     }
   }
 
@@ -380,18 +345,18 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
     if (!this.requestId) {
       throw new LiquidProviderError('No Liquid Auth session; call connect() first', 4100)
     }
-    this.logger.info('Reconnecting Liquid Auth session...', this.requestId)
+    this.ctx.logger.info('Reconnecting Liquid Auth session...', this.requestId)
     this.teardownSession()
     const signal = new LiquidSignalClient({
       origin: this.origin,
       iceServers: this.iceServers,
-      log: (message, ...args) => this.logger.debug(message, ...args)
+      log: (message, ...args) => this.ctx.logger.debug(message, ...args)
     })
     this.signal = signal
     try {
       const session = await signal.pair(this.requestId, this.reconnectTimeoutMs)
       this.attachSession(session, this.requestId)
-      if (!this.addresses.includes(session.wallet)) {
+      if (!this.ctx.getAddresses().includes(session.wallet)) {
         this.storeAccounts(session.wallet, this.requestId)
       }
       await this.hello()
@@ -448,19 +413,19 @@ export class BiatecLiquidAdapter extends BaseWallet<BiatecLiquidOptions> {
     try {
       const message = await decodeLiquidMessage(payload)
       if (!isLiquidResponse(message)) {
-        this.logger.debug('Ignoring unsolicited request from wallet', message.reference)
+        this.ctx.logger.debug('Ignoring unsolicited request from wallet', message.reference)
         return
       }
       const pending = this.pending.get(message.requestId)
       if (!pending) {
-        this.logger.debug('Ignoring response for unknown request', message.requestId)
+        this.ctx.logger.debug('Ignoring response for unknown request', message.requestId)
         return
       }
       clearTimeout(pending.timer)
       this.pending.delete(message.requestId)
       pending.resolve(message)
     } catch (error: any) {
-      this.logger.warn('Dropping undecodable message from wallet:', error?.message ?? error)
+      this.ctx.logger.warn('Dropping undecodable message from wallet:', error?.message ?? error)
     }
   }
 

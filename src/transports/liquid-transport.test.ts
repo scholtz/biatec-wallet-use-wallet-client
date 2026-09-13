@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { createTestHarness } from '@txnlab/use-wallet/testing'
 import type { State } from '@txnlab/use-wallet/testing'
 import { ScopeType, SignDataError, byteArrayToBase64 } from '@txnlab/use-wallet/adapter'
-import { BiatecLiquidAdapter, WALLET_ID_LIQUID, type BiatecLiquidOptions } from './adapter'
+import { BiatecWalletAdapter, WALLET_ID, type BiatecWalletOptions } from '../adapter'
 import {
   LiquidProviderError,
   LiquidReference,
@@ -12,7 +12,7 @@ import {
   fromBase64Url,
   toBase64Url,
   type LiquidRequestMessage
-} from './protocol'
+} from '../liquid/protocol'
 
 // ---------- Fake socket.io + WebRTC ------------------------------------------- //
 
@@ -142,18 +142,22 @@ const mockAlgodClient = {
   accountInformation: () => ({ do: async () => ({ authAddr: undefined }) })
 } as unknown as algosdk.Algodv2
 
-function createAdapter(options: Partial<BiatecLiquidOptions> = {}, state?: Partial<State>) {
-  const { store, accessor } = createTestHarness(WALLET_ID_LIQUID, state)
-  const adapter = new BiatecLiquidAdapter({
-    id: WALLET_ID_LIQUID,
-    metadata: BiatecLiquidAdapter.defaultMetadata,
+function createAdapter(options: Partial<BiatecWalletOptions> = {}, state?: Partial<State>) {
+  const { store, accessor } = createTestHarness(WALLET_ID, state)
+  const adapter = new BiatecWalletAdapter({
+    id: WALLET_ID,
+    metadata: BiatecWalletAdapter.defaultMetadata,
     store: accessor,
     subscribe: (callback) => {
       const subscription = store.subscribe(() => callback(store.state))
       return () => subscription.unsubscribe()
     },
     getAlgodClient: () => mockAlgodClient,
-    options: { onDisplayUri: () => undefined, providerId: 'dapp-provider', ...options }
+    options: {
+      projectId: 'unused-in-these-tests',
+      ...options,
+      liquid: options.liquid === false ? false : { providerId: 'dapp-provider', ...options.liquid }
+    }
   })
   return { adapter, store }
 }
@@ -185,9 +189,9 @@ async function waitFor(predicate: () => boolean, timeoutMs = 2000): Promise<void
 }
 
 /** Drives a full pairing: link ack, wallet offer, answer, channel open, hello answered. */
-async function connectAdapter(options: Partial<BiatecLiquidOptions> = {}) {
+async function connectAdapter(options: Partial<BiatecWalletOptions> = {}) {
   const ctx = createAdapter(options)
-  const connecting = ctx.adapter.connect()
+  const connecting = ctx.adapter.connect({ method: 'liquid' })
   // Wait until the socket is connected, link acked and the offer listener is armed.
   await waitFor(() => mocks.socket.emitted.some((e) => e.event === 'link'))
   await waitFor(() => mocks.socket.listenerCount('offer-description') > 0)
@@ -247,7 +251,7 @@ afterEach(() => {
 
 // ---------- Tests -------------------------------------------------- //
 
-describe('BiatecLiquidAdapter', () => {
+describe('BiatecWalletAdapter — Liquid Auth transport', () => {
   describe('connect', () => {
     it('hands a liquid:// link to onDisplayUri, links, answers the offer and stores the wallet', async () => {
       const onDisplayUri = vi.fn()
@@ -257,6 +261,7 @@ describe('BiatecLiquidAdapter', () => {
       const [uri, info] = onDisplayUri.mock.calls[0]
       expect(uri).toBe(`liquid://liquid.biatec.io/?requestId=${info.requestId}`)
       expect(info.origin).toBe('https://liquid.biatec.io')
+      expect(info.method).toBe('liquid')
 
       expect(mocks.io).toHaveBeenCalledWith('https://liquid.biatec.io', {
         transports: ['websocket'],
@@ -276,9 +281,13 @@ describe('BiatecLiquidAdapter', () => {
 
       expect(accounts).toEqual([
         {
-          name: 'Biatec Wallet (Liquid Auth) Account 1',
+          name: 'Biatec Wallet Account 1',
           address: ADDR1,
-          metadata: { requestId: info.requestId, origin: 'https://liquid.biatec.io' }
+          metadata: {
+            method: 'liquid',
+            requestId: info.requestId,
+            origin: 'https://liquid.biatec.io'
+          }
         }
       ])
       expect(adapter.activeAddress).toBe(ADDR1)
@@ -290,7 +299,10 @@ describe('BiatecLiquidAdapter', () => {
     it('uses a custom origin and ICE servers', async () => {
       const iceServers = [{ urls: ['stun:stun.example:3478'] }]
       const onDisplayUri = vi.fn()
-      await connectAdapter({ origin: 'https://liquid.example.com/', iceServers, onDisplayUri })
+      await connectAdapter({
+        onDisplayUri,
+        liquid: { origin: 'https://liquid.example.com/', iceServers }
+      })
       expect(onDisplayUri.mock.calls[0][0]).toMatch(
         /^liquid:\/\/liquid\.example\.com\/\?requestId=/
       )
@@ -299,8 +311,8 @@ describe('BiatecLiquidAdapter', () => {
     })
 
     it('times out when the wallet never pairs', async () => {
-      const { adapter } = createAdapter({ connectTimeoutMs: 20 })
-      await expect(adapter.connect()).rejects.toThrow(/Timed out/)
+      const { adapter } = createAdapter({ liquid: { connectTimeoutMs: 20 } })
+      await expect(adapter.connect({ method: 'liquid' })).rejects.toThrow(/Timed out/)
       expect(adapter.isConnected).toBe(false)
     })
   })
@@ -314,21 +326,29 @@ describe('BiatecLiquidAdapter', () => {
 
     it('restores accounts and lazily re-pairs on the first signing request', async () => {
       const { adapter } = createAdapter(
-        { reconnectTimeoutMs: 500 },
+        { liquid: { reconnectTimeoutMs: 500 } },
         {
           wallets: {
-            [WALLET_ID_LIQUID]: {
+            [WALLET_ID]: {
               accounts: [
                 {
                   name: 'a',
                   address: ADDR1,
-                  metadata: { requestId: 'stored-request', origin: 'https://liquid.biatec.io' }
+                  metadata: {
+                    method: 'liquid',
+                    requestId: 'stored-request',
+                    origin: 'https://liquid.biatec.io'
+                  }
                 }
               ],
               activeAccount: {
                 name: 'a',
                 address: ADDR1,
-                metadata: { requestId: 'stored-request', origin: 'https://liquid.biatec.io' }
+                metadata: {
+                  method: 'liquid',
+                  requestId: 'stored-request',
+                  origin: 'https://liquid.biatec.io'
+                }
               }
             }
           }
@@ -358,15 +378,21 @@ describe('BiatecLiquidAdapter', () => {
 
     it('fails fast with a clear error when the wallet is not around to re-pair', async () => {
       const { adapter } = createAdapter(
-        { reconnectTimeoutMs: 20 },
+        { liquid: { reconnectTimeoutMs: 20 } },
         {
           wallets: {
-            [WALLET_ID_LIQUID]: {
-              accounts: [{ name: 'a', address: ADDR1, metadata: { requestId: 'r', origin: 'x' } }],
+            [WALLET_ID]: {
+              accounts: [
+                {
+                  name: 'a',
+                  address: ADDR1,
+                  metadata: { method: 'liquid', requestId: 'r', origin: 'x' }
+                }
+              ],
               activeAccount: {
                 name: 'a',
                 address: ADDR1,
-                metadata: { requestId: 'r', origin: 'x' }
+                metadata: { method: 'liquid', requestId: 'r', origin: 'x' }
               }
             }
           }
@@ -449,7 +475,7 @@ describe('BiatecLiquidAdapter', () => {
     })
 
     it('times out when the wallet never answers', async () => {
-      const { adapter } = await connectAdapter({ requestTimeoutMs: 20 })
+      const { adapter } = await connectAdapter({ liquid: { requestTimeoutMs: 20 } })
       const error = await adapter.signTransactions([makePayment(ADDR1, STRANGER)]).catch((e) => e)
       expect(error).toBeInstanceOf(LiquidProviderError)
       expect(error.code).toBe(4002)

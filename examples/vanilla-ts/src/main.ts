@@ -1,7 +1,11 @@
 import algosdk from 'algosdk'
 import QRCode from 'qrcode'
 import { NetworkConfigBuilder, ScopeType, WalletManager } from '@txnlab/use-wallet'
-import { biatec, BIATEC_EXTRA_NETWORKS } from 'biatec-wallet-use-wallet-client'
+import {
+  biatec,
+  BIATEC_EXTRA_NETWORKS,
+  type BiatecDisplayUriInfo
+} from 'biatec-wallet-use-wallet-client'
 
 // Get one at https://cloud.reown.com and put it in examples/vanilla-ts/.env as VITE_WC_PROJECT_ID
 const projectId = import.meta.env.VITE_WC_PROJECT_ID as string | undefined
@@ -16,17 +20,26 @@ const networks = new NetworkConfigBuilder()
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T
 
-// --- WalletConnect pairing dialog: just a QR code + copy button, no wallet explorer. ---
-// biatec()'s onDisplayUri receives the pairing URI instead of the default WalletConnect modal
-// opening itself; we render it into the <dialog id="wc-dialog"> from index.html.
+// --- Pairing dialog: just a QR code + copy button, no wallet explorer. ---
+// biatec()'s onDisplayUri receives the pairing/session URI instead of the adapter's built-in
+// dialog opening itself; we render it into the <dialog id="wc-dialog"> from index.html. This
+// fires for both transports (WalletConnect and Liquid Auth) — the built-in method picker
+// (choose WalletConnect vs. Liquid Auth) still appears first.
 const wcDialog = $<HTMLDialogElement>('wc-dialog')
+const wcTitle = $<HTMLHeadingElement>('wc-title')
 const wcQr = $<HTMLImageElement>('wc-qr')
 const wcCopy = $<HTMLButtonElement>('wc-copy')
 
+const METHOD_LABELS: Record<BiatecDisplayUriInfo['method'], string> = {
+  walletconnect: 'WalletConnect',
+  liquid: 'Liquid Auth'
+}
+
 let currentUri = ''
 
-async function showWalletConnectDialog(uri: string) {
+async function showWalletConnectDialog(uri: string, info: BiatecDisplayUriInfo) {
   currentUri = uri
+  wcTitle.textContent = `Scan with Biatec Wallet — ${METHOD_LABELS[info.method]}`
   wcQr.src = await QRCode.toDataURL(uri, { width: 280, margin: 1 })
   wcDialog.showModal()
 }
@@ -49,7 +62,7 @@ const manager = new WalletManager({
   wallets: [
     biatec({
       projectId,
-      onDisplayUri: (uri) => showWalletConnectDialog(uri)
+      onDisplayUri: (uri, info) => showWalletConnectDialog(uri, info)
     })
   ],
   networks,

@@ -63,13 +63,15 @@
     <pre id="log"></pre>
 
     <!--
-      Minimal WalletConnect pairing UI: just a QR code and a copy button — no wallet explorer,
-      no "get a wallet" links, nothing else. Shown instead of the default WalletConnect modal
-      because biatec() below is configured with onDisplayUri. See src/main.ts.
+      Minimal pairing UI: just a QR code and a copy button — no wallet explorer, no "get a
+      wallet" links, nothing else. Shown instead of the adapter's built-in URI dialog because
+      biatec() below is configured with onDisplayUri. Used for both transports (WalletConnect
+      and Liquid Auth); the heading is updated per-method in src/main.ts. The built-in method
+      picker (choose WalletConnect vs. Liquid Auth) still appears first.
     -->
     <dialog id="wc-dialog">
-      <h2 style="margin: 0 0 0.75rem; font-size: 1.1rem">Scan with Biatec Wallet</h2>
-      <img id="wc-qr" alt="WalletConnect pairing QR code" />
+      <h2 id="wc-title" style="margin: 0 0 0.75rem; font-size: 1.1rem">Scan with Biatec Wallet</h2>
+      <img id="wc-qr" alt="Pairing QR code" />
       <button id="wc-copy" type="button">Copy connection string</button>
       <button id="wc-cancel" type="button">Cancel</button>
     </dialog>

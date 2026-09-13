@@ -7,6 +7,9 @@ import { closeWalletConnectDialog } from './walletManager'
  * account switcher for the wallet that is currently active. Works for any
  * wallet in `wallets` (only Biatec Wallet is registered in this example),
  * so this component doesn't hardcode anything Biatec-specific.
+ *
+ * `wallet.connect()` here doesn't pass a `method`, so Biatec's built-in method picker
+ * (WalletConnect vs. Liquid Auth) shows first — before `<ConnectQrDialog>` ever receives a URI.
  */
 export function ConnectWallet() {
   const { wallets, activeWallet, activeAddress } = useWallet()
