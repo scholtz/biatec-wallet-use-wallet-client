@@ -753,13 +753,16 @@ export class DirectTransport {
       const canSign = !isSigned && this.ctx.getAddresses().includes(txn.sender.toString())
       const entry: LiquidWalletTransaction = { txn: toBase64Url(txn.toByte()) }
       if (!(isIndexMatch && canSign)) entry.signers = []
-      else assertSupportedByDirect(txn)
       return entry
     })
 
     if (txnsToSign.every((entry) => entry.signers?.length === 0)) {
       return txnsToSign.map(() => null)
     }
+
+    // The wallet checks EVERY transaction of the request (also pre-signed and counterparty ones),
+    // so the whole group must consist of supported kinds; synchronous, before the popup opens.
+    for (const { txn } of decoded) assertSupportedByDirect(txn)
 
     // No `await` may precede this call: it opens the popup from the user's gesture.
     const session = this.beginSession(this.connectTimeoutMs)

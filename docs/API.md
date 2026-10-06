@@ -225,7 +225,8 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
   `stpf`, `hb`, application creation, application program updates) the call rejects with a
   `LiquidProviderError` `4200` (`Transaction type "<t>" is not supported by Biatec Direct.`,
   `Creating an application is not supported by Biatec Direct.` or `Updating application programs
-is not supported by Biatec Direct.`) **before any popup opens**. Use the WalletConnect method
+is not supported by Biatec Direct.`) **before any popup opens**. The check covers every transaction of the group (also pre-signed and
+  counterparty ones), not only the positions to be signed. Use the WalletConnect method
   for those transactions.
 
 ### `signData`

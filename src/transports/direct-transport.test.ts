@@ -1259,7 +1259,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
     })
   }
 
-  it('does not check positions sent with signers: [] (foreign sender)', async () => {
+  it('returns nulls without a popup when nothing is to be signed, whatever the kinds', async () => {
     const { adapter } = await connectAdapter()
     win.open.mockClear()
     const foreign = algosdk.makeAssetFreezeTxnWithSuggestedParamsFromObject({
@@ -1270,6 +1270,24 @@ describe('Direct transport — unsupported transaction kinds', () => {
       suggestedParams: params
     })
     expect(await adapter.signTransactions([foreign])).toEqual([null])
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
+  it('rejects the whole group when a signers: [] position has an unsupported kind', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const pay = makePayment(ADDR1, STRANGER)
+    const foreignFreeze = algosdk.makeAssetFreezeTxnWithSuggestedParamsFromObject({
+      sender: STRANGER,
+      assetIndex: 1,
+      freezeTarget: ADDR2,
+      frozen: true,
+      suggestedParams: params
+    })
+    const error = await adapter.signTransactions([pay, foreignFreeze]).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4200)
+    expect(error.message).toMatch(/Transaction type "afrz" is not supported/)
     expect(win.open).not.toHaveBeenCalled()
   })
 

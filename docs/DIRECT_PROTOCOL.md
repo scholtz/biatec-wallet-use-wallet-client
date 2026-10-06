@@ -117,8 +117,10 @@ heartbeats (`hb`), application creation and application program updates with err
 (`Transaction type "<t>" is not supported by Biatec Direct.`, `Creating an application is not
 supported by Biatec Direct.` or `Updating application programs is not supported by Biatec
 Direct.`) and closes the popup. The SDK applies the same rule client-side, synchronously and
-before `window.open`, for every position it asks the wallet to sign (positions sent with
-`signers: []` are not checked), so the user never sees a pointless popup. dApps that need those
+before `window.open`, once at least one position is to be signed. Because the wallet checks every
+transaction of the request, the **whole group** must consist of supported kinds, including
+pre-signed and counterparty (`signers: []`) positions; a group in which nothing is to be signed
+returns `null`s without a popup. This way the user never sees a pointless popup. dApps that need those
 kinds must use the WalletConnect method.
 
 ## 5.2 Request (dApp → wallet)
