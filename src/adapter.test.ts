@@ -4,10 +4,12 @@ import { createTestHarness } from '@txnlab/use-wallet/testing'
 import type { State } from '@txnlab/use-wallet/testing'
 import {
   BiatecWalletAdapter,
+  classifyConnectError,
   PopupBlockedError,
   WALLET_ID,
   type BiatecWalletOptions
 } from './adapter'
+import { LiquidErrorCode, LiquidProviderError } from './liquid/protocol'
 import * as connectDialog from './connect-dialog'
 
 // ---------- Mocks -------------------------------------------------- //
@@ -266,6 +268,32 @@ describe('BiatecWalletAdapter — dispatch', () => {
 })
 
 // ---------- Direct (popup) dispatch through the connect dialog --------------- //
+
+describe('classifyConnectError', () => {
+  it('maps every error kind', () => {
+    expect(classifyConnectError(new PopupBlockedError())).toBe('popupBlocked')
+    expect(classifyConnectError(new LiquidProviderError('x', LiquidErrorCode.timedOut))).toBe(
+      'timedOut'
+    )
+    expect(
+      classifyConnectError(new LiquidProviderError('x', LiquidErrorCode.networkNotSupported))
+    ).toBe('wrongNetwork')
+    expect(
+      classifyConnectError(
+        new LiquidProviderError('Wallet window was closed', LiquidErrorCode.cancelled)
+      )
+    ).toBe('walletClosed')
+    expect(
+      classifyConnectError(new LiquidProviderError('declined', LiquidErrorCode.cancelled))
+    ).toBe('userRejected')
+    expect(classifyConnectError({ code: 5000, message: 'User rejected.' })).toBe('userRejected')
+    expect(classifyConnectError({ code: 4001, message: 'nope' })).toBe('userRejected')
+    expect(classifyConnectError(new Error('User rejected the request'))).toBe('userRejected')
+    expect(classifyConnectError(new Error('boom'))).toBeUndefined()
+    expect(classifyConnectError('weird')).toBeUndefined()
+    expect(classifyConnectError(null)).toBeUndefined()
+  })
+})
 
 describe('BiatecWalletAdapter — direct method & dialog', () => {
   const WALLET_ORIGIN = 'https://wallet.biatec.io'

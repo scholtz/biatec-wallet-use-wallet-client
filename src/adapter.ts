@@ -110,7 +110,7 @@ export interface ConnectArgs {
 }
 
 /** Maps a failed connect attempt to the localized copy the dialog shows (raw text is only logged). */
-function classifyConnectError(error: unknown): ConnectErrorKind | undefined {
+export function classifyConnectError(error: unknown): ConnectErrorKind | undefined {
   if (error instanceof PopupBlockedError) return 'popupBlocked'
   if (error instanceof DirectNetworkMismatchError) return 'wrongNetwork'
   if (error instanceof LiquidProviderError) {
@@ -120,6 +120,17 @@ function classifyConnectError(error: unknown): ConnectErrorKind | undefined {
       return /closed/i.test(error.message) ? 'walletClosed' : 'userRejected'
     }
   }
+  // WalletConnect rejections are plain `{ code, message }` objects (5000 = user rejected, 4001
+  // = EIP-1193 style rejection) or Errors whose message says so.
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code: unknown }).code
+      : undefined
+  const text =
+    error instanceof Error
+      ? error.message
+      : String((error as { message?: unknown } | null)?.message ?? '')
+  if (code === 5000 || code === 4001 || /user rejected|rejected/i.test(text)) return 'userRejected'
   return undefined
 }
 

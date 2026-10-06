@@ -70,3 +70,36 @@ test('cancelling the dialog closes it and leaves the app usable', async ({ page 
   // The app should still be responsive — a failed/cancelled connect() must not wedge the UI.
   await expect(page.locator('#connect')).toBeVisible()
 })
+
+test('Escape closes the dialog and leaves the app usable', async ({ page }) => {
+  await page.click('#connect')
+  await expect(page.locator('.bcd-panel')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.bcd-panel')).toHaveCount(0)
+  await expect(page.locator('#connect')).toBeVisible()
+  // Focus goes back to the control that opened the dialog.
+  await expect(page.locator('#connect')).toBeFocused()
+})
+
+test('Tab from the last control wraps to the first, Shift+Tab from the first to the last', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await expect(page.locator('.bcd-panel')).toBeVisible()
+  const ids = await page.evaluate(() => {
+    const panel = document.querySelector('.bcd-panel') as HTMLElement
+    const els = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null)
+    els.forEach((el, i) => el.setAttribute('data-e2e-order', String(i)))
+    return els.length
+  })
+  expect(ids).toBeGreaterThan(2)
+  await page.focus(`[data-e2e-order="${ids - 1}"]`)
+  await page.keyboard.press('Tab')
+  await expect(page.locator('[data-e2e-order="0"]')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(page.locator(`[data-e2e-order="${ids - 1}"]`)).toBeFocused()
+})

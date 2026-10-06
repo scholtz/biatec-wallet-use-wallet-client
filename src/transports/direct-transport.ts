@@ -888,7 +888,12 @@ export class DirectTransport {
       )
     }
     if (signed.sig) {
-      await signerFor(signed.sig, signed.sgnr?.toString())
+      const signer = await signerFor(signed.sig, signed.sgnr?.toString())
+      // Verified against the auth address but `sgnr` is missing: algod would check `sig` against
+      // the sender and reject at submission, so rebuild with `sgnr` set (txID is unchanged).
+      if (signer !== sender && signed.sgnr?.toString() !== signer) {
+        return original.attachSignature(signer, signed.sig)
+      }
     } else if (!signed.msig && !signed.lsig && !signed.pqsig) {
       throw invalid(`stxns[${index}] carries no signature`)
     }

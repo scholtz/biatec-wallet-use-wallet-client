@@ -102,6 +102,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   let locale = resolveLocale(options.locale)
   let i18n = TRANSLATIONS[locale]
   const showPicker = methods.length > 1
+  // Restored on close so keyboard users return to the control that opened the dialog.
+  const previouslyFocused = document.activeElement
   let selected = options.defaultMethod
   const states = new Map<BiatecMethod, ConnectMethodState>()
   const started = new Set<BiatecMethod>()
@@ -123,6 +125,9 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
       document.removeEventListener('keydown', onKeydown)
       overlay.classList.remove('bcd-overlay--visible')
       setTimeout(() => overlay.remove(), 160)
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus()
+      }
     },
     setState: (method, state) => {
       states.set(method, state)
@@ -185,6 +190,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   function select(method: BiatecMethod, isInitial = false): void {
     selected = method
     renderMethods()
+    // renderMethods replaced the clicked tab: keep keyboard focus on the selected one.
+    if (!isInitial) methodsEl?.querySelector<HTMLElement>('.bcd-method--active')?.focus()
     if (showContent && method === 'direct') {
       // Never open a popup merely because a tab was highlighted: wait for the button.
       renderContent()
@@ -255,6 +262,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     renderMethods()
     renderLocales()
     renderContent()
+    // The re-render replaced the focused flag button: keep keyboard focus on the same flag.
+    localesEl.querySelector<HTMLElement>(`[data-locale="${next}"]`)?.focus()
   }
 
   function renderLocales(): void {
@@ -398,12 +407,19 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
 
   document.body.appendChild(overlay)
   requestAnimationFrame(() => overlay.classList.add('bcd-overlay--visible'))
+  // Focus can only move once the overlay is in the document: the Direct open button when Direct
+  // is shown, else the selected method tab (or the panel's first control).
+  const initialFocus =
+    panel.querySelector<HTMLElement>('.bcd-open') ??
+    panel.querySelector<HTMLElement>('.bcd-method--active') ??
+    panel.querySelector<HTMLElement>(FOCUSABLE)
+  initialFocus?.focus()
 
   return handle
 }
 
 /** Escapes text for HTML content AND double/single-quoted attribute values. */
-function escapeHtml(value: string): string {
+export function escapeHtml(value: string): string {
   return value
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

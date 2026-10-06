@@ -1703,6 +1703,19 @@ describe('Direct transport — signature verification', () => {
     expect(algosdk.decodeSignedTransaction(result!).sgnr?.toString()).toBe(ADDR2)
   })
 
+  it('sets sgnr when the wallet returns an auth-key signature without it (txID unchanged)', async () => {
+    const { adapter } = await connectWithRekeyed()
+    const txn = makePayment(REKEYED, STRANGER)
+    const sig = algosdk.decodeSignedTransaction(txn.signTxn(account2.sk)).sig!
+    const noSgnr = algosdk.encodeMsgpack(new algosdk.SignedTransaction({ txn, sig }))
+    expect(algosdk.decodeSignedTransaction(noSgnr).sgnr).toBeUndefined()
+    const [result] = await sign(adapter, txn, toBase64Url(noSgnr))
+    const decoded = algosdk.decodeSignedTransaction(result!)
+    expect(decoded.sgnr?.toString()).toBe(ADDR2)
+    expect(decoded.sig).toEqual(sig)
+    expect(decoded.txn.txID()).toBe(txn.txID())
+  })
+
   it('attaches a raw 64-byte signature of a rekeyed account with the auth address as signer', async () => {
     const { adapter } = await connectWithRekeyed()
     const txn = makePayment(REKEYED, STRANGER)
