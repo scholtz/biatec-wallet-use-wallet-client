@@ -71,6 +71,18 @@ test('cancelling the dialog closes it and leaves the app usable', async ({ page 
   await expect(page.locator('#connect')).toBeVisible()
 })
 
+test('pressing Enter on "Open Biatec Wallet" keeps keyboard focus inside the dialog', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await page.click('[data-method="direct"]')
+  await expect(page.locator('.bcd-open')).toBeFocused()
+  await page.keyboard.press('Enter')
+  // The panel re-renders into its "connecting" state; focus must land on the new primary button.
+  await expect(page.locator('.bcd-open')).toBeFocused()
+  expect(await page.evaluate(() => !!document.activeElement?.closest('.bcd-panel'))).toBe(true)
+})
+
 test('Escape closes the dialog and leaves the app usable', async ({ page }) => {
   await page.click('#connect')
   await expect(page.locator('.bcd-panel')).toBeVisible()

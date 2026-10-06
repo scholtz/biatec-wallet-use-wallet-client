@@ -219,6 +219,14 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
 - If `indexesToSign` is given, only those positions are eligible for signing regardless of sender;
   every other position is sent with `signers: []`.
 - Throws `SessionError` if called before `connect()`/`resumeSession()` has established a session.
+- **Direct only — supported transaction kinds.** Biatec Wallet's compact Direct popup signs only
+  payments (`pay`), asset transfers (`axfer`) and calls to **existing** applications (`appl` with
+  `appIndex != 0` and no approval/clear program). For anything else (`acfg`, `afrz`, `keyreg`,
+  `stpf`, `hb`, application creation, application program updates) the call rejects with a
+  `LiquidProviderError` `4200` (`Transaction type "<t>" is not supported by Biatec Direct.`,
+  `Creating an application is not supported by Biatec Direct.` or `Updating application programs
+is not supported by Biatec Direct.`) **before any popup opens**. Use the WalletConnect method
+  for those transactions.
 
 ### `signData`
 

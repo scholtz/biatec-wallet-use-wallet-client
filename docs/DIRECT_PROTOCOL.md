@@ -107,7 +107,21 @@ It carries nothing secret.
 | `capabilities.methods`       | `string[]` | At most 64 entries, each 1-256 chars. The wallet lists the **full request reference strings** it handles (e.g. `arc0027:enable:request`). **Informational in v1**; the SDK does not gate on it.                                                                                            |
 | `capabilities.genesisHashes` | `string[]` | At most 64 entries. **Reserved: the current wallet sends `[]`; do not rely on it.** If a wallet does list networks and none equals (by decoded bytes) the dApp's `genesisHash`, the SDK fails early with `4004`; the authoritative check is the wallet's own `4004` answer to the request. |
 
-### 5.2 Request (dApp → wallet)
+### Supported transaction kinds
+
+Biatec Wallet's compact Direct popup must be able to show a transaction completely before the user
+signs it, so `sign_transactions` accepts **only**: payments (`pay`), asset transfers (`axfer`) and
+calls to **existing** applications (`appl` with `appIndex != 0` and no approval/clear program).
+The wallet answers asset config (`acfg`), asset freeze (`afrz`), `keyreg`, state proofs (`stpf`),
+heartbeats (`hb`), application creation and application program updates with error `4200`
+(`Transaction type "<t>" is not supported by Biatec Direct.`, `Creating an application is not
+supported by Biatec Direct.` or `Updating application programs is not supported by Biatec
+Direct.`) and closes the popup. The SDK applies the same rule client-side, synchronously and
+before `window.open`, for every position it asks the wallet to sign (positions sent with
+`signers: []` are not checked), so the user never sees a pointless popup. dApps that need those
+kinds must use the WalletConnect method.
+
+## 5.2 Request (dApp → wallet)
 
 Sent once, after `ready`, with `popup.postMessage(request, WALLET_ORIGIN)`. `targetOrigin` is
 always `WALLET_ORIGIN`, **never `"*"`**.

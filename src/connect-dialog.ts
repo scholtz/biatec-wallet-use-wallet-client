@@ -322,6 +322,10 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     const methodLabel = i18n.methodLabel.direct
     const connecting = state?.status === 'connecting'
     const failed = state?.status === 'popup-blocked' || state?.status === 'error'
+    // The innerHTML below destroys the focused control; remember if focus was in the panel's
+    // content (or lost to <body>) so it can be handed to the replacement button.
+    const active = document.activeElement
+    const focusWasInContent = contentEl.contains(active) || active === document.body
     contentEl.innerHTML = `
       <h3 class="bcd-content-title">${escapeHtml(formatMethod(i18n.connectWith, methodLabel))}</h3>
       <div class="bcd-direct-state">
@@ -349,7 +353,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     // Keyboard users land on the primary action when the panel is first shown or enters
     // idle/failed from another state, but not on a re-render (e.g. a language switch).
     const phase = connecting ? 'connecting' : failed ? 'failed' : 'idle'
-    if (!connecting && phase !== directPhase) openButton.focus()
+    if (connecting ? focusWasInContent : phase !== directPhase) openButton.focus()
     directPhase = phase
   }
 

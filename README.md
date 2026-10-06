@@ -279,6 +279,10 @@ Rules of thumb:
 - **Do not send `Cross-Origin-Opener-Policy: same-origin`** from your dApp (it severs the channel
   to the popup). Use `same-origin-allow-popups` or no COOP header.
 - **Fetch everything async BEFORE the click.** An `await` (e.g. `getTransactionParams()`) between the click and `signTransactions()` can outlive the browser's user-activation window (about 1 s in Safari, or a slow node anywhere) and the popup is blocked. Load suggested params on mount / after connect / on a timer into state, build the transaction synchronously in the click handler (the shipped examples do this), and **catch `PopupBlockedError` and let the user click again** (it is not a failure of the wallet or the session).
+- **Direct signs only payments, asset transfers and calls to existing applications.** Asset
+  config/freeze, key registration, state proofs, heartbeats, application creation and program
+  updates are refused with error `4200` (before a popup opens); use the WalletConnect method for
+  those.
 - Everything the wallet returns is validated (addresses, array lengths, and that each returned
   signed transaction is really the one you sent) before it reaches your code.
 - `direct: { walletUrl }` is for local wallet development only: it must be `https` or

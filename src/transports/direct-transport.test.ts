@@ -1181,6 +1181,112 @@ describe('Direct transport — signTransactions', () => {
   })
 })
 
+describe('Direct transport — unsupported transaction kinds', () => {
+  const params = {
+    fee: 1000,
+    minFee: 1000,
+    flatFee: true,
+    firstValid: 1,
+    lastValid: 1000,
+    genesisID: 'testnet-v1.0',
+    genesisHash: algosdk.base64ToBytes(GENESIS_HASH)
+  }
+  const program = new Uint8Array([6, 129, 1])
+  const cases: [string, () => algosdk.Transaction, RegExp][] = [
+    [
+      'asset config',
+      () =>
+        algosdk.makeAssetCreateTxnWithSuggestedParamsFromObject({
+          sender: ADDR1,
+          total: 1,
+          decimals: 0,
+          defaultFrozen: false,
+          suggestedParams: params
+        }),
+      /Transaction type "acfg" is not supported by Biatec Direct/
+    ],
+    [
+      'asset freeze',
+      () =>
+        algosdk.makeAssetFreezeTxnWithSuggestedParamsFromObject({
+          sender: ADDR1,
+          assetIndex: 1,
+          freezeTarget: ADDR2,
+          frozen: true,
+          suggestedParams: params
+        }),
+      /Transaction type "afrz" is not supported/
+    ],
+    [
+      'application creation',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          suggestedParams: params
+        }),
+      /Creating an application is not supported by Biatec Direct/
+    ],
+    [
+      'application program update',
+      () =>
+        algosdk.makeApplicationUpdateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          approvalProgram: program,
+          clearProgram: program,
+          suggestedParams: params
+        }),
+      /Updating application programs is not supported by Biatec Direct/
+    ]
+  ]
+
+  for (const [name, make, message] of cases) {
+    it(`rejects ${name} with 4200 before any popup opens`, async () => {
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const error = await adapter.signTransactions([make()]).catch((e) => e)
+      expect(error).toBeInstanceOf(LiquidProviderError)
+      expect(error.code).toBe(4200)
+      expect(error.message).toMatch(message)
+      expect(win.open).not.toHaveBeenCalled()
+    })
+  }
+
+  it('does not check positions sent with signers: [] (foreign sender)', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const foreign = algosdk.makeAssetFreezeTxnWithSuggestedParamsFromObject({
+      sender: STRANGER,
+      assetIndex: 1,
+      freezeTarget: ADDR2,
+      frozen: true,
+      suggestedParams: params
+    })
+    expect(await adapter.signTransactions([foreign])).toEqual([null])
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
+  it('still opens the popup for a call to an existing application', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const call = algosdk.makeApplicationNoOpTxnFromObject({
+      sender: ADDR1,
+      appIndex: 5,
+      suggestedParams: params
+    })
+    const signing = adapter.signTransactions([call])
+    signing.catch(() => undefined)
+    expect(win.open).toHaveBeenCalledTimes(1)
+  })
+})
+
 describe('Direct transport — signData (ARC-0060)', () => {
   const metadata = { scope: ScopeType.AUTH, encoding: 'base64' }
   const data = byteArrayToBase64(new TextEncoder().encode('hello'))

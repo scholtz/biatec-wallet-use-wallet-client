@@ -247,6 +247,31 @@ interface Exchange {
   validate: (result: unknown) => unknown
 }
 
+/**
+ * Biatec Wallet's compact Direct popup signs only payments, asset transfers and calls to EXISTING
+ * applications, and refuses everything else with 4200. Checking here (synchronously, before the
+ * popup opens) saves the user a pointless popup; such dApps must use WalletConnect.
+ */
+function assertSupportedByDirect(txn: algosdk.Transaction): void {
+  const refuse = (what: string): never => {
+    throw new LiquidProviderError(
+      `${what} is not supported by Biatec Direct.`,
+      LiquidErrorCode.invalidInput
+    )
+  }
+  const type: string = txn.type
+  if (type === 'pay' || type === 'axfer') return
+  if (type === 'appl') {
+    const call = txn.applicationCall
+    if (!call || call.appIndex === 0n) refuse('Creating an application')
+    else if (call.approvalProgram.length > 0 || call.clearProgram.length > 0) {
+      refuse('Updating application programs')
+    }
+    return
+  }
+  refuse(`Transaction type "${type}"`)
+}
+
 /** Per signTransactions call: memoised chain lookups and rekeys made earlier in the group. */
 interface VerifyState {
   lookups: Map<string, Promise<string | undefined>>
@@ -728,6 +753,7 @@ export class DirectTransport {
       const canSign = !isSigned && this.ctx.getAddresses().includes(txn.sender.toString())
       const entry: LiquidWalletTransaction = { txn: toBase64Url(txn.toByte()) }
       if (!(isIndexMatch && canSign)) entry.signers = []
+      else assertSupportedByDirect(txn)
       return entry
     })
 
