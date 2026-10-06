@@ -22,7 +22,12 @@ export default defineConfig({
     env: {
       // Never a real WalletConnect Cloud project — these tests never complete a real pairing,
       // they only exercise the UI up to (and including) opening the connect dialog.
-      VITE_WC_PROJECT_ID: 'e2e-test-project-id'
+      VITE_WC_PROJECT_ID: 'e2e-test-project-id',
+      // The Direct popup tests answer for the wallet on this second origin (127.0.0.1 vs
+      // localhost, so the cross-origin postMessage path is really exercised); nothing listens
+      // there, the spec intercepts it with context.route(). The opt-in real-wallet spec points
+      // it at a running wallet instead (WALLET_E2E_URL).
+      VITE_DIRECT_WALLET_URL: process.env.WALLET_E2E_URL ?? 'http://127.0.0.1:5184'
     }
   }
 })

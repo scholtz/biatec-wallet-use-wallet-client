@@ -61,6 +61,7 @@ import {
   parseResponseEnvelope,
   parseSignDataResult,
   parseSignTransactionsResult,
+  genesisHashesEqual,
   type DirectReady
 } from './direct-validation'
 import { ConnectAbortedError, type BiatecAccountMetadata, type TransportContext } from './types'
@@ -150,6 +151,7 @@ function toError(error: unknown): Error {
 }
 
 function getHostWindow(): HostWindow {
+  // `window` is absent in SSR/Node; `unknown` because it is only duck-typed (open) just below.
   const host = (globalThis as { window?: unknown }).window
   if (!host || typeof (host as HostWindow).open !== 'function') {
     throw new SessionError('The Biatec Direct connection method needs a browser window')
@@ -180,6 +182,13 @@ export function resolveWalletUrl(walletUrl: string): { origin: string; base: str
 
 // ---------- One popup, one request ---------------------------------------- //
 
+/**
+ * The popup has one fixed window name per page (`biatec-wallet-direct`), so a second
+ * `window.open` with it would navigate, i.e. steal, the first request's popup. Guard per host
+ * window, at module level, so even two adapters/transports on the same page can never do that.
+ */
+const inFlight = new WeakMap<object, PopupSession>()
+
 interface Exchange {
   requestId: string
   responseReference: string
@@ -199,7 +208,7 @@ class PopupSession {
   private abortCleanup: (() => void) | undefined
 
   constructor(
-    private readonly host: HostWindow,
+    readonly host: HostWindow,
     readonly popup: PopupHandle,
     private readonly walletOrigin: string,
     private readonly connectTimeoutMs: number,
@@ -266,6 +275,8 @@ class PopupSession {
   private readonly onMessage = (event: MessageEvent): void => {
     if (this.settled) return
     try {
+      // MessageEvent is structurally what MessageLike describes; the cast only narrows the DOM
+      // type to the three fields used (lib.dom types `source` as MessageEventSource | null).
       const message = event as unknown as MessageLike
       if (!this.isTrusted(message)) {
         this.debug('Ignoring message from untrusted origin/source', message.origin)
@@ -358,6 +369,21 @@ class PopupSession {
     if (this.settled) return
     this.teardown()
     this.response.resolve(result)
+  }
+
+  /** Closes the popup if it is still open. Idempotent and independent of `settled`. */
+  closePopup(): void {
+    try {
+      if (!this.popup.closed) this.popup.close()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** Fails the session (if still pending) and always closes the popup, even when already settled. */
+  abort(error: Error): void {
+    this.fail(error)
+    this.closePopup()
   }
 
   /** Rejects everything pending, stops all timers/listeners and closes the popup. Idempotent. */
@@ -461,9 +487,10 @@ export class DirectTransport {
    */
   private beginSession(connectTimeoutMs: number, signal?: AbortSignal): PopupSession {
     const host = getHostWindow()
-    if (this.session) {
+    const busy = inFlight.get(host)
+    if (this.session || (busy && !busy.settled)) {
       throw new LiquidProviderError(
-        'Another Biatec Wallet request is already in progress',
+        'Another Biatec Wallet request is already in progress on this page',
         LiquidErrorCode.invalidInput
       )
     }
@@ -483,11 +510,13 @@ export class DirectTransport {
       connectTimeoutMs,
       (settled) => {
         if (this.session === settled) this.session = null
+        if (inFlight.get(host) === settled) inFlight.delete(host)
       },
       (message, ...args) => this.ctx.logger.debug(message, ...args),
       signal
     )
     this.session = session
+    inFlight.set(host, session)
     return session
   }
 
@@ -518,7 +547,7 @@ export class DirectTransport {
     return (capabilities) => {
       if (
         capabilities.genesisHashes.length > 0 &&
-        !capabilities.genesisHashes.includes(genesisHash)
+        !capabilities.genesisHashes.some((hash) => genesisHashesEqual(hash, genesisHash))
       ) {
         throw new LiquidProviderError(
           'Biatec Wallet is not on the requested network',
@@ -573,7 +602,7 @@ export class DirectTransport {
       const result: EnableResult = await session.run(
         buildRequest(LiquidReference.enableRequest, params),
         LiquidReference.enableResponse,
-        (raw) => parseEnableResult(raw, this.providerId, genesisHash),
+        (raw) => parseEnableResult(raw, genesisHash),
         this.connectTimeoutMs,
         this.checkNetwork(genesisHash)
       )
@@ -581,7 +610,7 @@ export class DirectTransport {
       this.ctx.logger.info('Connected via Biatec Direct', { origin: this.walletOrigin })
       return accounts
     } catch (error) {
-      session.fail(toError(error))
+      session.abort(toError(error))
       this.ctx.logger.error('Error connecting:', toError(error).message)
       throw this.translate(error, genesisHash)
     }
@@ -604,6 +633,16 @@ export class DirectTransport {
       this.ctx.logger.warn(
         'Persisted Biatec Direct session belongs to a different wallet origin; disconnecting',
         persistedOrigin
+      )
+      this.ctx.onDisconnect()
+      return false
+    }
+    // A session was granted for one network; if the dApp is now on another, it is stale.
+    const active = this.ctx.getActiveNetworkConfig().genesisHash
+    const persistedGenesis = metadata && metadata.method === 'direct' ? metadata.genesisHash : ''
+    if (!genesisHashesEqual(persistedGenesis, active)) {
+      this.ctx.logger.warn(
+        'Persisted Biatec Direct session was granted for another network; disconnecting'
       )
       this.ctx.onDisconnect()
       return false
@@ -654,43 +693,106 @@ export class DirectTransport {
       const stxns = await session.run(
         buildRequest(LiquidReference.signTransactionsRequest, params),
         LiquidReference.signTransactionsResponse,
-        (raw) => parseSignTransactionsResult(raw, this.providerId, txnsToSign.length),
+        (raw) => parseSignTransactionsResult(raw, txnsToSign.length),
         this.requestTimeoutMs,
         this.checkNetwork(genesisHash)
       )
 
       // Everything below is re-validation of untrusted wallet output; it runs after the
       // session settled, so any throw here simply rejects the call.
-      return txnsToSign.map((entry, index) => {
-        if (entry.signers && entry.signers.length === 0) return null
+      const results: (Uint8Array | null)[] = []
+      for (let index = 0; index < txnsToSign.length; index++) {
+        const entry = txnsToSign[index]
         const value = stxns[index]
-        if (value === null) return null
-        return this.verifySigned(
-          decodeBase64Field(value, `stxns[${index}]`, LIMITS.MAX_STXN_CHARS),
-          decoded[index].txn,
-          index
+        if ((entry.signers && entry.signers.length === 0) || value === null) {
+          results.push(null)
+          continue
+        }
+        results.push(
+          await this.verifySigned(
+            decodeBase64Field(value, `stxns[${index}]`, LIMITS.MAX_STXN_CHARS),
+            decoded[index].txn,
+            index
+          )
         )
-      })
+      }
+      return results
     } catch (error) {
-      session.fail(toError(error))
+      // Also closes the popup when the wallet answer fails local validation (already settled).
+      session.abort(toError(error))
       this.ctx.logger.error('Error signing transactions:', toError(error).message)
       throw this.translate(error, genesisHash)
     }
   }
 
+  /** Whether `signature` is a valid ed25519 signature of `message` by the key of `address`. */
+  private verifyEd25519(message: Uint8Array, signature: Uint8Array, address: string): boolean {
+    if (signature.length !== 64) return false
+    // algosdk has no public raw-ed25519 verify (`verifyBytes` prepends the "MX" tag, which is
+    // wrong for transactions). `verifyMultisig` verifies sub-signatures over the raw message, so
+    // a 1-of-1 multisig wrapper around the same key is an exact raw verification.
+    const publicKey = algosdk.Address.fromString(address).publicKey
+    const derived = algosdk.multisigAddress({ version: 1, threshold: 1, addrs: [address] })
+    const wrapper = { v: 1, thr: 1, subsig: [{ pk: publicKey, s: signature }] }
+    return algosdk.verifyMultisig(
+      message,
+      // algosdk's EncodedMultisig type is internal (not exported); the wrapper has exactly its
+      // shape, so a precise type cannot be named here.
+      wrapper as unknown as Parameters<typeof algosdk.verifyMultisig>[1],
+      derived.publicKey
+    )
+  }
+
+  /** The address the chain says currently controls `sender` (its auth address), if rekeyed. */
+  private async chainAuthAddr(sender: string): Promise<string | undefined> {
+    if (!this.ctx.getAuthAddr) return undefined
+    try {
+      return await this.ctx.getAuthAddr(sender)
+    } catch (error) {
+      throw new LiquidProviderError(
+        `Could not confirm the signer of a rekeyed account: ${toError(error).message}`,
+        LiquidErrorCode.failedToPost
+      )
+    }
+  }
+
   /**
    * Checks that bytes returned by the wallet are really the transaction we asked it to sign:
-   * either a 64-byte raw signature (attached locally) or a signed transaction whose unsigned
-   * part has the same transaction id and which carries a signature of some kind.
+   * a 64-byte raw signature (attached locally) or a signed transaction whose unsigned part has
+   * the same txID. ed25519 signatures are verified cryptographically against the sender, or, for
+   * a rekeyed sender, against the auth address, which is confirmed on chain (the wallet's own
+   * `sgnr` claim is never trusted by itself). msig/lsig/pqsig get structural checks only.
    */
-  private verifySigned(
+  private async verifySigned(
     bytes: Uint8Array,
     original: algosdk.Transaction,
     index: number
-  ): Uint8Array {
+  ): Promise<Uint8Array> {
+    const sender = original.sender.toString()
+    const message = original.bytesToSign()
+
+    /** The address `signature` verifies for: the sender, else its chain-confirmed auth address. */
+    const signerFor = async (signature: Uint8Array, claimed?: string): Promise<string> => {
+      if (signature.length !== 64) {
+        throw invalid(`stxns[${index}] has a signature of the wrong length`)
+      }
+      if (!claimed || claimed === sender) {
+        if (this.verifyEd25519(message, signature, sender)) return sender
+      }
+      const authAddr = await this.chainAuthAddr(sender)
+      if (authAddr && (!claimed || claimed === authAddr)) {
+        if (this.verifyEd25519(message, signature, authAddr)) return authAddr
+      }
+      throw new LiquidProviderError(
+        `Biatec Wallet returned an invalid signature at position ${index}`,
+        LiquidErrorCode.invalidInput
+      )
+    }
+
     if (bytes.length === 64) {
       // Android reference wallets return the raw ed25519 signature instead of the signed txn.
-      return original.attachSignature(original.sender, bytes)
+      const signer = await signerFor(bytes)
+      return original.attachSignature(signer, bytes)
     }
     let signed: algosdk.SignedTransaction
     try {
@@ -704,7 +806,9 @@ export class DirectTransport {
         LiquidErrorCode.invalidInput
       )
     }
-    if (!signed.sig && !signed.msig && !signed.lsig) {
+    if (signed.sig) {
+      await signerFor(signed.sig, signed.sgnr?.toString())
+    } else if (!signed.msig && !signed.lsig && !signed.pqsig) {
       throw invalid(`stxns[${index}] carries no signature`)
     }
     return bytes
@@ -740,18 +844,23 @@ export class DirectTransport {
       const signatures = await session.run(
         buildRequest(LiquidReference.signDataRequest, params),
         LiquidReference.signDataResponse,
-        (raw) => parseSignDataResult(raw, this.providerId, 1),
+        (raw) => parseSignDataResult(raw, 1),
         this.requestTimeoutMs,
         this.checkNetwork(genesisHash)
       )
       const signature = signatures[0]
       if (signature === null) throw new SignDataError('Wallet returned no signature', 4001)
-      return {
-        ...stdSignData,
-        signature: decodeBase64Field(signature, 'signatures[0]', LIMITS.MAX_SIGNATURE_CHARS)
-      }
+      const signatureBytes = decodeBase64Field(
+        signature,
+        'signatures[0]',
+        LIMITS.MAX_SIGNATURE_CHARS
+      )
+      // ARC-0060 signatures are ed25519: exactly 64 bytes. (Not cryptographically verified here:
+      // the signed digest is wallet-specific; only the length can be checked locally.)
+      if (signatureBytes.length !== 64) throw invalid('signatures[0] must be exactly 64 bytes')
+      return { ...stdSignData, signature: signatureBytes }
     } catch (error) {
-      session?.fail(toError(error))
+      session?.abort(toError(error))
       if (error instanceof SignDataError) {
         this.ctx.logger.error('Error signing data:', error.message)
         throw error

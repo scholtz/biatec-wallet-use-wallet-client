@@ -299,7 +299,7 @@ sequenceDiagram
 - `resumeSession()` opens nothing: the accounts are already in the use-wallet store, tagged
   `{ method: 'direct', walletOrigin, genesisHash }`. Each later signing call opens a fresh
   popup; a session whose `walletOrigin` differs from the currently pinned origin is dropped.
-- Only one popup/request may be in flight; concurrent calls reject with `4200` rather than
+- Only one popup/request may be in flight **per page** (module-level guard keyed by the page window, so a second adapter instance cannot steal the popup either); concurrent calls reject with `4200` rather than
   navigating the first popup away (they share the window name `biatec-wallet-direct`).
 - The wallet's answers are untrusted data: `direct-validation.ts` type-checks and bounds every
   field, `algosdk.isValidAddress` gates returned accounts, and a returned signed transaction must

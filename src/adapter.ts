@@ -183,7 +183,11 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       getActiveNetworkConfig: () => this.activeNetworkConfig,
       getActiveNetwork: () => this.activeNetwork,
       createStdSignData: this.createStdSignData,
-      onDisconnect: this.onDisconnect
+      onDisconnect: this.onDisconnect,
+      getAuthAddr: async (address) => {
+        const info = await this.getAlgodClient().accountInformation(address).do()
+        return info.authAddr?.toString()
+      }
     }
   }
 
@@ -388,6 +392,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
 
   public disconnect = async (): Promise<void> => {
     this.onDisconnect()
+    // A Direct popup that is still open (e.g. connecting) must never outlive a disconnect.
+    this.direct?.cancelPending()
     const method = this.activeMethod
     if (method === 'liquid' || method === 'direct') {
       await this.getTransport(method).disconnect()

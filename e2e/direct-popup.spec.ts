@@ -13,6 +13,9 @@ import { expect, test, type BrowserContext, type Page } from '@playwright/test'
  * against a genuinely signed transaction.
  */
 
+// The dev server points at WALLET_E2E_URL instead when the opt-in real-wallet spec runs.
+test.skip(!!process.env.WALLET_E2E_URL, 'stub-wallet tests are skipped when WALLET_E2E_URL is set')
+
 const WALLET_URL = 'http://127.0.0.1:5184'
 const account = algosdk.generateAccount()
 const ADDRESS = account.addr.toString()

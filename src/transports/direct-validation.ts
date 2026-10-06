@@ -6,6 +6,10 @@
  * lengths are bounded, and anything unexpected throws a {@link LiquidProviderError} (code 4200)
  * that the transport turns into a rejected request. Nothing here may be trusted to "just be a
  * string".
+ *
+ * `unknown` is used deliberately throughout this file: every parameter typed `unknown` is raw
+ * `postMessage` data from another window, for which no static type can be trusted; each is
+ * narrowed by an explicit runtime check before use (that is the purpose of this module).
  */
 import algosdk from 'algosdk'
 import { DIRECT_PROTOCOL_VERSION, DIRECT_READY_REFERENCE } from '../adapter-constants'
@@ -137,21 +141,42 @@ export function parseResponseEnvelope(
   return { result: data.result }
 }
 
-function checkProviderId(result: Record<string, unknown>, providerId: string): void {
-  if (result.providerId !== providerId) {
-    throw invalid('providerId does not match this dApp')
+/**
+ * `providerId` in a result identifies the **wallet** provider (the wallet announces its own fixed
+ * id; it does not echo the dApp's). It is not an authenticator — origin, source window and
+ * requestId are — so it is only validated for shape.
+ */
+function readWalletProviderId(result: Record<string, unknown>): string {
+  return boundedString(result.providerId, 'providerId', 128)
+}
+
+/**
+ * Decodes a genesis hash given as base64 or base64url, padded or not, to its 32 bytes.
+ * Returns `null` when it is not a valid 32-byte hash.
+ */
+export function decodeGenesisHash(value: unknown): Uint8Array | null {
+  if (typeof value !== 'string' || value.length < 43 || value.length > 44) return null
+  if (!BASE64_PATTERN.test(value)) return null
+  try {
+    const bytes = fromBase64Url(value)
+    return bytes.length === 32 ? bytes : null
+  } catch {
+    return null
   }
 }
 
+/** Compares two genesis hashes by their decoded bytes (never by string). */
+export function genesisHashesEqual(a: unknown, b: unknown): boolean {
+  const x = decodeGenesisHash(a)
+  const y = decodeGenesisHash(b)
+  return x !== null && y !== null && x.every((byte, i) => byte === y[i])
+}
+
 /** Validates an `enable` result: ids, genesis hash and every returned account address. */
-export function parseEnableResult(
-  result: unknown,
-  providerId: string,
-  genesisHash: string
-): EnableResult {
+export function parseEnableResult(result: unknown, genesisHash: string): EnableResult {
   if (!isRecord(result)) throw invalid('enable result must be an object')
-  checkProviderId(result, providerId)
-  if (result.genesisHash !== genesisHash) {
+  const providerId = readWalletProviderId(result)
+  if (!genesisHashesEqual(result.genesisHash, genesisHash)) {
     throw new LiquidProviderError(
       'Biatec Wallet approved a different network than the one requested',
       LiquidErrorCode.networkNotSupported,
@@ -187,11 +212,10 @@ export function parseEnableResult(
 /** Validates a `sign_transactions` result and returns the positional raw base64 entries. */
 export function parseSignTransactionsResult(
   result: unknown,
-  providerId: string,
   expectedLength: number
 ): (string | null)[] {
   if (!isRecord(result)) throw invalid('sign_transactions result must be an object')
-  checkProviderId(result, providerId)
+  readWalletProviderId(result)
   const stxns = result.stxns
   if (!Array.isArray(stxns) || stxns.length !== expectedLength || stxns.length > MAX_ITEMS * 8) {
     throw invalid(`stxns must be an array of exactly ${expectedLength} entries`)
@@ -206,13 +230,9 @@ export function parseSignTransactionsResult(
 }
 
 /** Validates a `sign_data` result and returns the positional raw base64 entries. */
-export function parseSignDataResult(
-  result: unknown,
-  providerId: string,
-  expectedLength: number
-): (string | null)[] {
+export function parseSignDataResult(result: unknown, expectedLength: number): (string | null)[] {
   if (!isRecord(result)) throw invalid('sign_data result must be an object')
-  checkProviderId(result, providerId)
+  readWalletProviderId(result)
   const signatures = result.signatures
   if (!Array.isArray(signatures) || signatures.length !== expectedLength) {
     throw invalid(`signatures must be an array of exactly ${expectedLength} entries`)

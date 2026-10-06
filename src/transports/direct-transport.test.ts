@@ -12,6 +12,7 @@ import {
   type LiquidRequestMessage
 } from '../liquid/protocol'
 import { DirectTransport, POPUP_POLL_INTERVAL_MS, resolveWalletUrl } from './direct-transport'
+import { decodeGenesisHash, genesisHashesEqual } from './direct-validation'
 
 // ---------- Fake browser ---------------------------------------------------- //
 
@@ -113,8 +114,13 @@ const ADDR1 = account1.addr.toString()
 const ADDR2 = account2.addr.toString()
 const STRANGER = stranger.addr.toString()
 
+/** Chain rekey state for the tests: sender address -> auth address. */
+const authAddrs: Record<string, string> = {}
 const mockAlgodClient = {
-  accountInformation: () => ({ do: async () => ({ authAddr: undefined }) })
+  accountInformation: (address: string) => ({
+    do: async () => ({ authAddr: authAddrs[address] })
+  })
+  // Test double: only the one algod method the adapter calls is implemented.
 } as unknown as algosdk.Algodv2
 
 function createAdapter(
@@ -196,6 +202,7 @@ async function readyAndRequest<T>(run: () => Promise<T>) {
 }
 
 beforeEach(() => {
+  for (const key of Object.keys(authAddrs)) delete authAddrs[key]
   vi.useFakeTimers()
   win = new FakeWindow()
   vi.stubGlobal('window', win)
@@ -396,11 +403,29 @@ describe('Direct transport — connect', () => {
     await expect(connecting).resolves.toHaveLength(2)
   })
 
-  it('rejects a response carrying a different providerId', async () => {
+  it('does not compare the response providerId with the dApp one (it identifies the wallet)', async () => {
     const { adapter } = createAdapter()
     const { connecting, request } = await startConnect(adapter)
     fromWallet(
-      response(request, LiquidReference.enableResponse, enableResult(request, { providerId: 'x' }))
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, { providerId: 'wallet-own-provider-id' })
+      )
+    )
+    await expect(connecting).resolves.toHaveLength(2)
+  })
+
+  it.each([
+    ['missing', undefined],
+    ['empty', ''],
+    ['not a string', 5],
+    ['too long', 'p'.repeat(129)]
+  ])('rejects a response whose providerId is %s', async (_name, providerId) => {
+    const { adapter } = createAdapter()
+    const { connecting, request } = await startConnect(adapter)
+    fromWallet(
+      response(request, LiquidReference.enableResponse, enableResult(request, { providerId }))
     )
     const error = await connecting.catch((e) => e)
     expect(error).toBeInstanceOf(LiquidProviderError)
@@ -805,7 +830,7 @@ describe('Direct transport — connect', () => {
         adapter.signTransactions([makePayment(ADDR1, STRANGER)])
       )
       await adapter.disconnect()
-      await expect(promise).rejects.toThrow('Session closed')
+      await expect(promise).rejects.toThrow(/cancelled|Session closed/i)
       expect(popup().close).toHaveBeenCalled()
       expect(adapter.isConnected).toBe(false)
       expect(win.listeners.size).toBe(0)
@@ -982,7 +1007,7 @@ describe('Direct transport — signTransactions', () => {
       () => ({ providerId: 'dapp-provider', stxns: [toBase64Url(new Uint8Array([1, 2, 3, 4, 5]))] })
     ],
     ['entry is gigantic', () => ({ providerId: 'dapp-provider', stxns: ['A'.repeat(200_000)] })],
-    ['wrong providerId', () => ({ providerId: 'someone-else', stxns: [null] })]
+    ['empty providerId', () => ({ providerId: '', stxns: [null] })]
   ]
   it.each(badSignResults)('rejects a malformed result: %s', async (_name, build) => {
     const { adapter } = await connectAdapter()
@@ -1131,7 +1156,12 @@ describe('Direct transport — signData (ARC-0060)', () => {
 
   const failures: [string, unknown, number][] = [
     ['null signature', { providerId: 'dapp-provider', signatures: [null] }, 4001],
-    ['wrong providerId', { providerId: 'x', signatures: [toBase64Url(new Uint8Array(64))] }, 4200],
+    ['empty providerId', { providerId: '', signatures: [toBase64Url(new Uint8Array(64))] }, 4200],
+    [
+      'wrong length (63 bytes)',
+      { providerId: 'w', signatures: [toBase64Url(new Uint8Array(63))] },
+      4200
+    ],
     ['wrong length', { providerId: 'dapp-provider', signatures: [] }, 4200],
     ['not an array', { providerId: 'dapp-provider', signatures: 'sig' }, 4200],
     ['not base64', { providerId: 'dapp-provider', signatures: ['***'] }, 4200]
@@ -1231,3 +1261,394 @@ function newBareTransport(): DirectTransport {
     { providerId: 'dapp-provider' }
   )
 }
+
+// ---------- Contract with the real wallet (literal response shapes) ---------- //
+
+/**
+ * The shapes below are copied from what the wallet implementation (scholtz/wallet, PR #193,
+ * `src/store/direct.ts`) actually sends: its own fixed provider id (never an echo of the dApp's),
+ * a NORMALIZED genesis hash (base64url, no padding), full reference strings in `ready`, the
+ * `wallet` brand in the enable result and a `providerId` inside error payloads.
+ */
+describe('Direct transport — contract with the wallet implementation', () => {
+  const WALLET_PROVIDER_ID = '8f7a1c2e-5b3d-4e9f-a6c0-1d2e3f4a5b6c'
+  const NORMALIZED_HASH = 'SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9_cOUJOiI'
+
+  const walletReady = () => ({
+    v: 1,
+    reference: 'biatec:direct:ready',
+    capabilities: {
+      methods: [
+        'arc0027:enable:request',
+        'arc0027:disable:request',
+        'arc0027:sign_transactions:request',
+        'arc0060:sign_data:request'
+      ],
+      genesisHashes: []
+    }
+  })
+
+  const walletResponse = (
+    request: LiquidRequestMessage<any>,
+    reference: string,
+    body: { result?: unknown; error?: unknown }
+  ) => ({ id: crypto.randomUUID(), requestId: request.id, reference, ...body })
+
+  async function walletConnect(
+    accounts: { address: string; name?: string }[] = [{ address: ADDR1 }],
+    options: Partial<BiatecWalletOptions> = {}
+  ) {
+    const ctx = createAdapter(options)
+    const connecting = ctx.adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    fromWallet(walletReady())
+    await flush()
+    const request = sentRequest()
+    fromWallet(
+      walletResponse(request, 'arc0027:enable:response', {
+        result: {
+          providerId: WALLET_PROVIDER_ID,
+          genesisHash: NORMALIZED_HASH,
+          accounts,
+          wallet: 'Biatec Wallet'
+        }
+      })
+    )
+    return { ...ctx, accounts: await connecting, request }
+  }
+
+  it('connects: padded request hash vs the wallet normalized (unpadded base64url) hash', async () => {
+    const { adapter, request, accounts } = await walletConnect()
+    expect(request.params.genesisHash).toBe(GENESIS_HASH) // padded standard base64 from use-wallet
+    expect(GENESIS_HASH).not.toBe(NORMALIZED_HASH)
+    expect(accounts).toHaveLength(1)
+    expect(accounts[0].name).toBe('Biatec Wallet Account 1') // `name` is omitted by the wallet when unset
+    expect(accounts[0].metadata).toMatchObject({ method: 'direct', genesisHash: GENESIS_HASH })
+    expect(adapter.isConnected).toBe(true)
+  })
+
+  it('signs transactions with the wallet literal response (own providerId, signed txn)', async () => {
+    const { adapter } = await walletConnect()
+    const txn = makePayment(ADDR1, STRANGER)
+    const { promise, request } = await readyAndRequest(() => adapter.signTransactions([txn]))
+    // (readyAndRequest posts the dApp's own ready shape; the literal wallet one is covered above)
+    const signed = txn.signTxn(account1.sk)
+    fromWallet(
+      walletResponse(request, 'arc0027:sign_transactions:response', {
+        result: { providerId: WALLET_PROVIDER_ID, stxns: [toBase64Url(signed)] }
+      })
+    )
+    expect(await promise).toEqual([signed])
+  })
+
+  it('signs data with the wallet literal response', async () => {
+    const { adapter } = await walletConnect()
+    win.open.mockClear()
+    const signing = adapter.signData(byteArrayToBase64(new TextEncoder().encode('hi')), {
+      scope: ScopeType.AUTH,
+      encoding: 'base64'
+    })
+    signing.catch(() => undefined)
+    fromWallet(walletReady())
+    await requestPosted()
+    const signature = new Uint8Array(64).fill(9)
+    fromWallet(
+      walletResponse(sentRequest(), 'arc0060:sign_data:response', {
+        result: { providerId: WALLET_PROVIDER_ID, signatures: [toBase64Url(signature)] }
+      })
+    )
+    expect((await signing).signature).toEqual(signature)
+  })
+
+  it('maps the wallet literal error payload (with providerId inside the error)', async () => {
+    const ctx = createAdapter()
+    const connecting = ctx.adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    fromWallet(walletReady())
+    await flush()
+    fromWallet(
+      walletResponse(sentRequest(), 'arc0027:enable:response', {
+        error: { code: 4001, message: 'User rejected', providerId: WALLET_PROVIDER_ID }
+      })
+    )
+    const error = await connecting.catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4001)
+  })
+
+  it('accepts a normalized hash in ready capabilities but rejects a different network', async () => {
+    const ok = createAdapter()
+    const connecting = ok.adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    fromWallet({
+      ...walletReady(),
+      capabilities: { methods: [], genesisHashes: [NORMALIZED_HASH] }
+    })
+    await flush()
+    expect(sentRequest().reference).toBe('arc0027:enable:request')
+  })
+
+  it('rejects an enable result for another network even when written in the other base64 flavour', async () => {
+    const ctx = createAdapter()
+    const connecting = ctx.adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    fromWallet(walletReady())
+    await flush()
+    fromWallet(
+      walletResponse(sentRequest(), 'arc0027:enable:response', {
+        result: {
+          providerId: WALLET_PROVIDER_ID,
+          genesisHash: 'wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8', // mainnet, normalized
+          accounts: [{ address: ADDR1 }]
+        }
+      })
+    )
+    await expect(connecting).rejects.toBeInstanceOf(DirectNetworkMismatchError)
+  })
+})
+
+describe('genesis hash comparison', () => {
+  const bytes = new Uint8Array(32).map((_, i) => 250 - i * 3)
+  const b64 = Buffer.from(bytes).toString('base64')
+  const b64url = Buffer.from(bytes).toString('base64url')
+
+  it('compares decoded bytes across base64/base64url and padding', () => {
+    expect(b64.endsWith('=')).toBe(true)
+    expect(genesisHashesEqual(b64, b64url)).toBe(true)
+    expect(genesisHashesEqual(b64, b64.replace(/=+$/, ''))).toBe(true)
+    expect(genesisHashesEqual(b64url, b64)).toBe(true)
+  })
+
+  it('is false for different bytes and for anything that is not a 32-byte hash', () => {
+    const other = Buffer.from(new Uint8Array(32).fill(1)).toString('base64')
+    expect(genesisHashesEqual(b64, other)).toBe(false)
+    expect(genesisHashesEqual(b64, 'short')).toBe(false)
+    expect(genesisHashesEqual(b64, undefined)).toBe(false)
+    expect(genesisHashesEqual('', '')).toBe(false)
+    expect(decodeGenesisHash(Buffer.from(new Uint8Array(31)).toString('base64'))).toBeNull()
+    expect(decodeGenesisHash('!'.repeat(43))).toBeNull()
+  })
+})
+
+describe('Direct transport — shared popup name across transports', () => {
+  it('a second adapter on the same page cannot navigate the first one popup', async () => {
+    const first = createAdapter()
+    const second = createAdapter()
+    const connecting = first.adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    expect(win.open).toHaveBeenCalledTimes(1)
+
+    const error = await second.adapter.connect({ method: 'direct' }).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4200)
+    expect(error.message).toMatch(/already in progress/)
+    expect(win.open).toHaveBeenCalledTimes(1) // the first popup was never re-targeted
+    expect(popup().close).not.toHaveBeenCalled()
+
+    // Once the first request is over, the other adapter may use the popup again.
+    first.adapter.disconnect().catch(() => undefined)
+    await expect(connecting).rejects.toBeDefined()
+    const retry = second.adapter.connect({ method: 'direct' })
+    retry.catch(() => undefined)
+    expect(win.open).toHaveBeenCalledTimes(2)
+  })
+})
+
+describe('Direct transport — local validation failures close the popup', () => {
+  it.each([
+    ['tampered transaction', () => toBase64Url(makePayment(ADDR1, ADDR2, 5).signTxn(account1.sk))],
+    ['undecodable signed transaction', () => toBase64Url(new Uint8Array([1, 2, 3, 4, 5, 6]))],
+    ['invalid base64', () => '***not-base64***']
+  ])('closes the popup after a %s', async (_name, build) => {
+    const { adapter } = await connectAdapter()
+    const txn = makePayment(ADDR1, STRANGER)
+    const { promise, request } = await readyAndRequest(() => adapter.signTransactions([txn]))
+    expect(popup().close).not.toHaveBeenCalled()
+    fromWallet(
+      response(request, LiquidReference.signTransactionsResponse, {
+        providerId: 'w',
+        stxns: [build()]
+      })
+    )
+    await expect(promise).rejects.toBeInstanceOf(LiquidProviderError)
+    expect(popup().close).toHaveBeenCalled()
+    expect(win.listeners.size).toBe(0)
+  })
+
+  it('closes the popup when the connect result fails local validation after the session settled', async () => {
+    const { adapter } = createAdapter()
+    const { connecting, request } = await startConnect(adapter)
+    fromWallet(
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, { accounts: [{ address: 'nope' }] })
+      )
+    )
+    await expect(connecting).rejects.toBeDefined()
+    expect(popup().close).toHaveBeenCalled()
+  })
+})
+
+describe('Direct transport — signature verification', () => {
+  const rekeyed = algosdk.generateAccount()
+  const REKEYED = rekeyed.addr.toString()
+
+  /** A connected adapter whose accounts also include a rekeyed one (auth address = account2). */
+  async function connectWithRekeyed() {
+    authAddrs[REKEYED] = ADDR2
+    const ctx = createAdapter()
+    const { connecting, request } = await startConnect(ctx.adapter)
+    fromWallet(
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, { accounts: [{ address: ADDR1 }, { address: REKEYED }] })
+      )
+    )
+    await connecting
+    return ctx
+  }
+
+  async function sign(
+    adapter: BiatecWalletAdapter,
+    txn: algosdk.Transaction,
+    entry: string | null
+  ) {
+    const { promise, request } = await readyAndRequest(() => adapter.signTransactions([txn]))
+    fromWallet(
+      response(request, LiquidReference.signTransactionsResponse, {
+        providerId: 'w',
+        stxns: [entry]
+      })
+    )
+    return promise
+  }
+
+  it('accepts a rekeyed account signed by its auth address and keeps sgnr', async () => {
+    const { adapter } = await connectWithRekeyed()
+    const txn = makePayment(REKEYED, STRANGER)
+    const signed = txn.signTxn(account2.sk)
+    const [result] = await sign(adapter, txn, toBase64Url(signed))
+    expect(algosdk.decodeSignedTransaction(result!).sgnr?.toString()).toBe(ADDR2)
+  })
+
+  it('attaches a raw 64-byte signature of a rekeyed account with the auth address as signer', async () => {
+    const { adapter } = await connectWithRekeyed()
+    const txn = makePayment(REKEYED, STRANGER)
+    const raw = algosdk.decodeSignedTransaction(txn.signTxn(account2.sk)).sig!
+    const [result] = await sign(adapter, txn, toBase64Url(raw))
+    const decoded = algosdk.decodeSignedTransaction(result!)
+    expect(decoded.sig).toEqual(raw)
+    expect(decoded.sgnr?.toString()).toBe(ADDR2)
+    expect(decoded.txn.txID()).toBe(txn.txID())
+  })
+
+  it('rejects a rekeyed account signed by a key the chain does not name as auth address', async () => {
+    const { adapter } = await connectWithRekeyed()
+    const txn = makePayment(REKEYED, STRANGER)
+    const signed = txn.signTxn(stranger.sk) // claims sgnr = stranger
+    await expect(sign(adapter, txn, toBase64Url(signed))).rejects.toThrow(/invalid signature/)
+  })
+
+  it('rejects a sgnr claim for an account that is not rekeyed on chain', async () => {
+    const { adapter } = await connectAdapter()
+    const txn = makePayment(ADDR1, STRANGER)
+    const signed = txn.signTxn(stranger.sk) // wallet claims stranger is the signer of ADDR1
+    await expect(sign(adapter, txn, toBase64Url(signed))).rejects.toThrow(/invalid signature/)
+  })
+
+  it('rejects an ed25519 signature that does not verify (one flipped bit)', async () => {
+    const { adapter } = await connectAdapter()
+    const txn = makePayment(ADDR1, STRANGER)
+    const good = algosdk.decodeSignedTransaction(txn.signTxn(account1.sk))
+    const badSig = new Uint8Array(good.sig!)
+    badSig[10] ^= 1
+    const forged = algosdk.encodeMsgpack(new algosdk.SignedTransaction({ txn, sig: badSig }))
+    const error = await sign(adapter, txn, toBase64Url(forged)).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4200)
+    expect(error.message).toMatch(/invalid signature/)
+    expect(popup().close).toHaveBeenCalled()
+  })
+
+  it('rejects an invalid raw 64-byte signature', async () => {
+    const { adapter } = await connectAdapter()
+    const txn = makePayment(ADDR1, STRANGER)
+    await expect(sign(adapter, txn, toBase64Url(new Uint8Array(64).fill(7)))).rejects.toThrow(
+      /invalid signature/
+    )
+  })
+
+  it('rejects a signature of the wrong length (63 bytes)', async () => {
+    const { adapter } = await connectAdapter()
+    const error = await sign(
+      adapter,
+      makePayment(ADDR1, STRANGER),
+      toBase64Url(new Uint8Array(63).fill(1))
+    ).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4200)
+  })
+
+  it('does not look the chain up for a plain (not rekeyed) account', async () => {
+    const lookups = vi.spyOn(mockAlgodClient, 'accountInformation')
+    const { adapter } = await connectAdapter()
+    const txn = makePayment(ADDR1, STRANGER)
+    await sign(adapter, txn, toBase64Url(txn.signTxn(account1.sk)))
+    expect(lookups).not.toHaveBeenCalled()
+  })
+
+  it('reports a failing chain lookup instead of trusting the wallet', async () => {
+    authAddrs[REKEYED] = ADDR2
+    const ctx = createAdapter()
+    const { connecting, request } = await startConnect(ctx.adapter)
+    fromWallet(
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, { accounts: [{ address: REKEYED }] })
+      )
+    )
+    await connecting
+    vi.spyOn(mockAlgodClient, 'accountInformation').mockImplementation(
+      // Test double for the one algod call the adapter makes.
+      () => ({ do: async () => Promise.reject(new Error('algod down')) }) as never
+    )
+    const txn = makePayment(REKEYED, STRANGER)
+    const error = await sign(ctx.adapter, txn, toBase64Url(txn.signTxn(account2.sk))).catch(
+      (e) => e
+    )
+    expect(error.message).toMatch(/Could not confirm the signer/)
+  })
+})
+
+describe('Direct transport — resume after a network change', () => {
+  const persisted = (genesisHash: string) => {
+    const account = {
+      name: 'a',
+      address: ADDR1,
+      metadata: { method: 'direct', walletOrigin: WALLET_ORIGIN, genesisHash }
+    }
+    return { wallets: { [WALLET_ID]: { accounts: [account], activeAccount: account } } }
+  }
+
+  it('keeps the session when the persisted hash is the active network in another encoding', async () => {
+    const { adapter } = createAdapter({}, persisted('SGO1GKSzyE7IEPItTxCByw9x8FmnrCDexi9_cOUJOiI'))
+    await adapter.resumeSession()
+    expect(adapter.isConnected).toBe(true)
+  })
+
+  it('drops the session when it was granted for another network', async () => {
+    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+    const { adapter } = createAdapter({}, persisted('wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='))
+    await adapter.resumeSession()
+    expect(adapter.isConnected).toBe(false)
+  })
+
+  it('drops a session whose persisted hash is garbage', async () => {
+    const { adapter } = createAdapter({}, persisted('not-a-hash'))
+    await adapter.resumeSession()
+    expect(adapter.isConnected).toBe(false)
+  })
+})

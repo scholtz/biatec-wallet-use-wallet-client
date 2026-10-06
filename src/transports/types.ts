@@ -22,6 +22,8 @@ export interface TransportContext {
   getActiveNetwork: () => string
   createStdSignData: (data: string) => Promise<StdSignData>
   onDisconnect: () => void
+  /** Auth (rekey) address of `address` according to the chain, if any. Used by Direct. */
+  getAuthAddr?: (address: string) => Promise<string | undefined>
 }
 
 /** The connection method a persisted account/session used, so resume can dispatch correctly. */
