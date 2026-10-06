@@ -313,6 +313,7 @@ Things to know:
   calling `signTransactions` is not. If the browser blocks the popup you get a
   `PopupBlockedError`; the built-in dialog turns that into an "allow popups, then click again"
   hint.
+- **Fetch everything async BEFORE the click.** An `await` (e.g. `getTransactionParams()`) between the click and `signTransactions()` can outlive the browser's user-activation window (about 1 s in Safari, or a slow node anywhere) and the popup is blocked. Load suggested params on mount / after connect / on a timer into state, build the transaction synchronously in the click handler (the shipped examples do this), and **catch `PopupBlockedError` and let the user click again** (it is not a failure of the wallet or the session).
 - **Do not set `Cross-Origin-Opener-Policy: same-origin`** on your dApp: it severs the
   connection to the popup. `same-origin-allow-popups` (or no COOP header) is fine.
 - With the built-in dialog, the **Biatec Direct** tab shows an _Open Biatec Wallet_ button instead

@@ -111,10 +111,28 @@ $('connect-popup').onclick = async () => {
 
 $('disconnect').onclick = () => wallet.disconnect()
 
+// Suggested params are fetched BEFORE the click (and refreshed on a timer), so the click handler
+// can build the transaction and call signTransactions with NO `await` in between: the Biatec
+// Direct popup must be opened inside the user's gesture or the browser blocks it.
+let cachedParams: algosdk.SuggestedParams | null = null
+const refreshParams = () =>
+  manager.algodClient
+    .getTransactionParams()
+    .do()
+    .then((params) => (cachedParams = params))
+    .catch(() => undefined)
+void refreshParams()
+setInterval(refreshParams, 20_000)
+manager.subscribe(() => void refreshParams()) // also after a network switch / connect
+
 $('sign-txn').onclick = async () => {
   try {
     const sender = wallet.activeAddress!
-    const suggestedParams = await manager.algodClient.getTransactionParams().do()
+    const suggestedParams = cachedParams
+    if (!suggestedParams) {
+      log('suggested params not loaded yet; click again in a moment')
+      return
+    }
     const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
       sender,
       receiver: sender,
@@ -124,7 +142,11 @@ $('sign-txn').onclick = async () => {
     const signed = await wallet.signTransactions([txn])
     log('signed txn bytes:', signed[0]?.length)
   } catch (e) {
-    log('sign failed:', String(e))
+    if (e instanceof Error && e.name === 'PopupBlockedError') {
+      log('popup blocked: allow popups for this site, then click again')
+    } else {
+      log('sign failed:', String(e))
+    }
   }
 }
 

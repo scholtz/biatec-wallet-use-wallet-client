@@ -15,12 +15,32 @@
     log = [...log, line]
   }
 
+  // Suggested params are fetched BEFORE the click (and refreshed on a timer), so the click handler
+  // can build the transaction and call signTransactions with NO `await` in between: the Biatec
+  // Direct popup must be opened inside the user's gesture or the browser blocks it.
+  let cachedParams: algosdk.SuggestedParams | null = null
+  const refresh = () =>
+    wallet.algodClient.current
+      .getTransactionParams()
+      .do()
+      .then((params) => (cachedParams = params))
+      .catch(() => undefined)
+  $effect(() => {
+    void refresh()
+    const timer = setInterval(refresh, 20_000)
+    return () => clearInterval(timer)
+  })
+
   async function handleSignTransaction() {
     const address = wallet.activeAddress.current
     if (!address) return
     busy = true
     try {
-      const suggestedParams = await wallet.algodClient.current.getTransactionParams().do()
+      const suggestedParams = cachedParams
+      if (!suggestedParams) {
+        append('Suggested params not loaded yet; click again in a moment.')
+        return
+      }
       // A 0 ALGO self-payment: safe to sign repeatedly, never actually sent.
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: address,
@@ -36,7 +56,11 @@
           : 'Wallet declined to sign this transaction.'
       )
     } catch (e) {
-      append(`Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`)
+      append(
+        e instanceof Error && e.name === 'PopupBlockedError'
+          ? 'Popup blocked: allow popups for this site, then click again.'
+          : `Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`
+      )
     } finally {
       busy = false
     }

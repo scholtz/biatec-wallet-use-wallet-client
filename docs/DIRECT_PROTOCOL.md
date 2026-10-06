@@ -221,7 +221,7 @@ dApp (adapter)                                              wallet popup (WALLET
  │  ◄── { id, requestId, reference:'arc0027:enable:response', result:{ providerId(wallet's), genesisHash(normalized), accounts } }
  │      accept iff origin/source match AND requestId === our id; validate; popup closes itself
  │
- │ later: click → window.open(same name) → ready → one request (sign_transactions | sign_data) → one response
+ │ later: click → window.open(fresh `biatec-wallet-direct-<uuid>` name) → ready → one request (sign_transactions | sign_data) → one response
 ```
 
 ## 9. Local testing

@@ -274,6 +274,8 @@ constants: `DIRECT_PROTOCOL_VERSION`, `DIRECT_READY_REFERENCE`, `DIRECT_ROUTE`,
 `LiquidReference.enableRequest/enableResponse/disableRequest/disableResponse`). Protocol:
 [DIRECT_PROTOCOL.md](DIRECT_PROTOCOL.md).
 
+**Fetch everything async BEFORE the click.** An `await` (e.g. `getTransactionParams()`) between the click and `signTransactions()` can outlive the browser's user-activation window (about 1 s in Safari, or a slow node anywhere) and the popup is blocked. Load suggested params on mount / after connect / on a timer into state, build the transaction synchronously in the click handler (the shipped examples do this), and **catch `PopupBlockedError` and let the user click again** (it is not a failure of the wallet or the session).
+
 ## Constants
 
 | Export              | Value                             | Use                                                                                           |
