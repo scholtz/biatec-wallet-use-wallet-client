@@ -96,14 +96,13 @@ test('real wallet: connect from the example dApp and sign a payment that verifie
   await expect(page.locator('#log')).toContainText(address)
   await expect(page.locator('#sign-txn')).toBeVisible()
 
-  // sign: a fresh popup, unlock, sign, send back
+  // sign: a fresh popup, unlock, sign. Signing is the approval: once every transaction is signed
+  // the wallet sends the result back by itself (there is no separate "send back" click).
   const [signPopup] = await Promise.all([page.waitForEvent('popup'), page.click('#sign-txn')])
   await unlock(signPopup)
-  await expect(signPopup.getByRole('button', { name: 'Sign transaction' })).toBeVisible({
-    timeout: 60_000
-  })
-  await signPopup.getByRole('button', { name: 'Sign transaction' }).click()
-  await signPopup.getByRole('button', { name: 'Send back to DApp' }).click()
+  const signButton = signPopup.getByRole('button', { name: 'Sign', exact: true })
+  await expect(signButton).toBeVisible({ timeout: 60_000 })
+  await signButton.click()
 
   // The adapter verified txID + ed25519 signature before returning; the example logs the length.
   await expect(page.locator('#log')).toContainText('signed txn bytes:', { timeout: 60_000 })
