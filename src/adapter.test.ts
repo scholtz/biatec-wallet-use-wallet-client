@@ -473,3 +473,78 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
     await expect(adapter.connect({ method: 'direct' })).rejects.toBeInstanceOf(PopupBlockedError)
   })
 })
+
+describe('BiatecWalletAdapter — losing transports are aborted', () => {
+  it('aborts losing attempts and a late WalletConnect completion never writes accounts', async () => {
+    const WALLET_ORIGIN = 'https://wallet.biatec.io'
+    const popup = {
+      closed: false,
+      postMessage: vi.fn(),
+      close: vi.fn(),
+      focus: vi.fn()
+    }
+    const listeners = new Set<(event: { origin: string; source: unknown; data: unknown }) => void>()
+    vi.stubGlobal('window', {
+      location: { origin: 'https://dapp.example' },
+      open: () => popup,
+      addEventListener: (_t: string, l: never) => listeners.add(l),
+      removeEventListener: (_t: string, l: never) => listeners.delete(l)
+    })
+    let dialogOptions!: Parameters<typeof connectDialog.openConnectDialog>[0]
+    vi.mocked(connectDialog.openConnectDialog).mockImplementation((options) => {
+      dialogOptions = options
+      return { close: vi.fn(), setState: vi.fn() }
+    })
+    let approveWalletConnect!: () => void
+    mocks.signClient.connect.mockResolvedValue({
+      uri: 'wc:uri',
+      approval: () =>
+        new Promise((resolve) => {
+          approveWalletConnect = () =>
+            resolve({
+              topic: 't1',
+              namespaces: {
+                algorand: {
+                  accounts: [`algorand:x:${ADDR1}`],
+                  methods: ['algo_signTxn'],
+                  events: []
+                }
+              }
+            })
+        })
+    })
+
+    const { adapter } = createAdapter({ liquid: false }, undefined, { withOnDisplayUri: false })
+    const connecting = adapter.connect()
+    await vi.waitFor(() => expect(typeof approveWalletConnect).toBe('function'))
+    dialogOptions.onSelectMethod('direct')
+    const send = (data: unknown) => {
+      for (const l of [...listeners]) l({ origin: WALLET_ORIGIN, source: popup, data })
+    }
+    send({
+      v: 1,
+      reference: 'biatec:direct:ready',
+      capabilities: { methods: [], genesisHashes: [] }
+    })
+    await vi.waitFor(() => expect(popup.postMessage).toHaveBeenCalledTimes(1))
+    const request = popup.postMessage.mock.calls[0][0]
+    const direct = algosdk.generateAccount().addr.toString()
+    send({
+      id: 'w',
+      requestId: request.id,
+      reference: 'arc0027:enable:response',
+      result: {
+        providerId: 'wallet',
+        genesisHash: request.params.genesisHash,
+        accounts: [{ address: direct }]
+      }
+    })
+    await connecting
+
+    // The WalletConnect attempt finishes AFTER Direct won: it must not touch the store.
+    approveWalletConnect()
+    await new Promise((resolve) => setTimeout(resolve, 20))
+    expect(adapter.accounts.map((a) => a.address)).toEqual([direct])
+    expect(adapter.accounts[0].metadata).toMatchObject({ method: 'direct' })
+  })
+})

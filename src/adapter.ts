@@ -364,8 +364,9 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
             settled = true
             this.activeMethod = method
             dialog.close()
-            // Another method won: don't leave a Biatec Wallet popup dangling.
-            if (method !== 'direct') this.direct?.cancelPending()
+            // Abort every losing attempt (WalletConnect/Liquid pairings still pending, a Direct
+            // popup still open); a loser that completes late can no longer write accounts.
+            controller.abort()
             resolve(accounts)
           })
           .catch((error: unknown) => {

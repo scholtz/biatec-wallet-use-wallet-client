@@ -27,7 +27,12 @@ import type SignClient from '@walletconnect/sign-client'
 import type { SessionTypes, SignClientTypes } from '@walletconnect/types'
 import { getWindowMetadata } from '../window-metadata'
 import { SessionError } from '../errors'
-import { raceAbort, type BiatecAccountMetadata, type TransportContext } from './types'
+import {
+  ConnectAbortedError,
+  raceAbort,
+  type BiatecAccountMetadata,
+  type TransportContext
+} from './types'
 
 export const SIGN_TXN_METHOD = 'algo_signTxn' as const
 export const SIGN_DATA_METHOD = 'algo_signData' as const
@@ -256,6 +261,8 @@ export class WalletConnectTransport {
       await handlers.onDisplayUri(uri)
 
       const session = await raceAbort(approval(), handlers.signal)
+      // Aborted while the approval was resolving: never write accounts for a lost attempt.
+      if (handlers.signal?.aborted) throw new ConnectAbortedError()
       const walletAccounts = this.onSessionConnected(session)
       this.ctx.logger.info('Connected successfully')
       return walletAccounts

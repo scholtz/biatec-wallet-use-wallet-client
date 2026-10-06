@@ -7,7 +7,7 @@ export const BIATEC_WALLET_URL = 'https://wallet.biatec.io'
 
 /** Path of the wallet's popup route for the `direct` transport. */
 export const DIRECT_ROUTE = '/direct'
-/** Window name used for the popup, so repeated opens reuse one wallet window. */
+/** Prefix of the per-session popup window name (`<prefix>-<uuid>`; never reused). */
 export const DIRECT_WINDOW_NAME = 'biatec-wallet-direct'
 export const DIRECT_POPUP_WIDTH = 480
 export const DIRECT_POPUP_HEIGHT = 720

@@ -299,7 +299,7 @@ describe('Direct transport — connect', () => {
     expect(win.open).toHaveBeenCalledTimes(1)
     const [url, name, features] = win.open.mock.calls[0]
     expect(url).toBe(`${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`)
-    expect(name).toBe('biatec-wallet-direct')
+    expect(name).toMatch(/^biatec-wallet-direct-[0-9a-f-]{36}$/)
     expect(features).toMatch(/^popup,width=480,height=720,left=\d+,top=\d+$/)
 
     fromWallet(readyMessage())
@@ -1650,5 +1650,199 @@ describe('Direct transport — resume after a network change', () => {
     const { adapter } = createAdapter({}, persisted('not-a-hash'))
     await adapter.resumeSession()
     expect(adapter.isConnected).toBe(false)
+  })
+})
+
+// ---------- Round 2: window names, origin pre-check, verification robustness ---------- //
+
+describe('Direct transport — unique window name per session', () => {
+  it('uses a different window name for every session, so a stale popup is never re-targeted', async () => {
+    const { adapter } = createAdapter()
+    const first = adapter.connect({ method: 'direct' })
+    first.catch(() => undefined)
+    adapter.disconnect().catch(() => undefined)
+    await first.catch(() => undefined)
+    const second = adapter.connect({ method: 'direct' })
+    second.catch(() => undefined)
+    const names = win.open.mock.calls.map((call) => call[1] as string)
+    expect(names).toHaveLength(2)
+    expect(names[0]).toMatch(/^biatec-wallet-direct-[0-9a-f-]{36}$/)
+    expect(names[1]).toMatch(/^biatec-wallet-direct-[0-9a-f-]{36}$/)
+    expect(names[0]).not.toBe(names[1])
+  })
+})
+
+describe('Direct transport — dApp origin pre-check (mirrors the wallet)', () => {
+  it.each([
+    'http://192.168.1.5:5173',
+    'http://app.test',
+    'http://example.com',
+    'https://example.com.',
+    'http://localhost.evil.com',
+    'ftp://localhost'
+  ])('refuses %s before opening any popup', async (origin) => {
+    win.location.origin = origin
+    const { adapter } = createAdapter()
+    const error = await adapter.connect({ method: 'direct' }).catch((e) => e)
+    expect(error.name).toBe('SessionError')
+    expect(error.message).toMatch(/https|origin/)
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
+  it.each([
+    'https://dapp.example',
+    'https://example.com:8443',
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+    'http://[::1]:5173',
+    'http://app.localhost:3000'
+  ])('accepts %s', async (origin) => {
+    win.location.origin = origin
+    const { adapter } = createAdapter()
+    adapter.connect({ method: 'direct' }).catch(() => undefined)
+    expect(win.open).toHaveBeenCalledTimes(1)
+    expect(win.open.mock.calls[0][0]).toContain(encodeURIComponent(origin))
+  })
+})
+
+describe('Direct transport — signature verification robustness', () => {
+  const rekeyed = algosdk.generateAccount()
+  const REKEYED = rekeyed.addr.toString()
+
+  const payment = (sender: string, receiver: string, rekeyTo?: string, amount = 1000) =>
+    algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender,
+      receiver,
+      amount,
+      ...(rekeyTo ? { rekeyTo } : {}),
+      suggestedParams: {
+        fee: 1000,
+        minFee: 1000,
+        flatFee: true,
+        firstValid: 1,
+        lastValid: 1000,
+        genesisID: 'testnet-v1.0',
+        genesisHash: algosdk.base64ToBytes(GENESIS_HASH)
+      }
+    })
+
+  async function connectAccounts(addresses: string[]) {
+    const ctx = createAdapter()
+    const { connecting, request } = await startConnect(ctx.adapter)
+    fromWallet(
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, { accounts: addresses.map((address) => ({ address })) })
+      )
+    )
+    await connecting
+    return ctx
+  }
+
+  async function signGroup(
+    adapter: BiatecWalletAdapter,
+    txns: algosdk.Transaction[],
+    stxns: string[]
+  ) {
+    const { promise, request } = await readyAndRequest(() => adapter.signTransactions(txns))
+    fromWallet(
+      response(request, LiquidReference.signTransactionsResponse, { providerId: 'w', stxns })
+    )
+    return promise
+  }
+
+  it('looks the chain up once per sender, however many transactions it has', async () => {
+    authAddrs[REKEYED] = ADDR2
+    const { adapter } = await connectAccounts([ADDR1, REKEYED])
+    const lookups = vi.spyOn(mockAlgodClient, 'accountInformation')
+    const txns = [
+      payment(REKEYED, STRANGER, undefined, 1),
+      payment(REKEYED, STRANGER, undefined, 2)
+    ]
+    algosdk.assignGroupID(txns)
+    const result = await signGroup(
+      adapter,
+      txns,
+      txns.map((t) => toBase64Url(t.signTxn(account2.sk)))
+    )
+    expect(result).toHaveLength(2)
+    expect(lookups).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not look the chain up when the wallet claims the sender signed and it does not verify', async () => {
+    const { adapter } = await connectAccounts([ADDR1])
+    const lookups = vi.spyOn(mockAlgodClient, 'accountInformation')
+    const txn = payment(ADDR1, STRANGER)
+    const good = algosdk.decodeSignedTransaction(txn.signTxn(account1.sk))
+    const badSig = new Uint8Array(good.sig!)
+    badSig[3] ^= 1
+    const forged = algosdk.encodeMsgpack(
+      new algosdk.SignedTransaction({ txn, sig: badSig, sgnr: txn.sender })
+    )
+    const error = await signGroup(adapter, [txn], [toBase64Url(forged)]).catch((e) => e)
+    expect(error.code).toBe(4200)
+    expect(error.message).toMatch(/invalid signature/)
+    expect(lookups).not.toHaveBeenCalled()
+  })
+
+  it('honours a rekey made by an earlier transaction of the same group (no chain lookup)', async () => {
+    const { adapter } = await connectAccounts([ADDR1])
+    const lookups = vi.spyOn(mockAlgodClient, 'accountInformation')
+    const t0 = payment(ADDR1, STRANGER, ADDR2, 1) // rekeys ADDR1 -> ADDR2, signed by ADDR1
+    const t1 = payment(ADDR1, STRANGER, undefined, 2) // already controlled by ADDR2
+    algosdk.assignGroupID([t0, t1])
+    const result = await signGroup(
+      adapter,
+      [t0, t1],
+      [toBase64Url(t0.signTxn(account1.sk)), toBase64Url(t1.signTxn(account2.sk))]
+    )
+    expect(algosdk.decodeSignedTransaction(result[1]!).sgnr?.toString()).toBe(ADDR2)
+    expect(lookups).not.toHaveBeenCalled()
+  })
+
+  it('applies group rekeys in order: the rekeyed key cannot sign the transaction that rekeys', async () => {
+    const { adapter } = await connectAccounts([ADDR1])
+    const t0 = payment(ADDR1, STRANGER, ADDR2, 1)
+    const t1 = payment(ADDR1, STRANGER, undefined, 2)
+    algosdk.assignGroupID([t0, t1])
+    // t0 signed by the NEW key (account2) is wrong: at t0 the sender's own key still controls it.
+    await expect(
+      signGroup(
+        adapter,
+        [t0, t1],
+        [toBase64Url(t0.signTxn(account2.sk)), toBase64Url(t1.signTxn(account2.sk))]
+      )
+    ).rejects.toThrow(/invalid signature/)
+  })
+
+  it('rekey back to itself in the group makes the sender own key valid again', async () => {
+    authAddrs[ADDR1] = ADDR2
+    const { adapter } = await connectAccounts([ADDR1])
+    const t0 = payment(ADDR1, STRANGER, ADDR1, 1) // signed by ADDR2 (chain auth), rekeys back
+    const t1 = payment(ADDR1, STRANGER, undefined, 2) // signed by ADDR1 itself again
+    algosdk.assignGroupID([t0, t1])
+    const result = await signGroup(
+      adapter,
+      [t0, t1],
+      [toBase64Url(t0.signTxn(account2.sk)), toBase64Url(t1.signTxn(account1.sk))]
+    )
+    expect(result).toHaveLength(2)
+  })
+
+  it('tells a transient algod failure apart from an invalid signature', async () => {
+    authAddrs[REKEYED] = ADDR2
+    const { adapter } = await connectAccounts([REKEYED])
+    vi.spyOn(mockAlgodClient, 'accountInformation').mockImplementation(
+      // Test double for the one algod call the adapter makes.
+      () => ({ do: async () => Promise.reject(new Error('algod down')) }) as never
+    )
+    const txn = payment(REKEYED, STRANGER)
+    const network = await signGroup(adapter, [txn], [toBase64Url(txn.signTxn(account2.sk))]).catch(
+      (e) => e
+    )
+    expect(network.code).toBe(4300)
+    expect(network.message).toMatch(/network error/)
+    expect(network.message).not.toMatch(/invalid signature/)
   })
 })

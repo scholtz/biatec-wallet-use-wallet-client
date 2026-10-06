@@ -163,6 +163,43 @@ function getHostWindow(): HostWindow {
  * Validates and normalizes the wallet URL. Returns the pinned origin and the base the popup
  * route is appended to.
  */
+/** Mirror of the wallet's `isLoopbackHost` (scholtz/wallet src/scripts/direct/protocol.ts). */
+function isLoopbackHost(hostname: string): boolean {
+  const host = hostname.toLowerCase()
+  return (
+    host === 'localhost' || host.endsWith('.localhost') || host === '127.0.0.1' || host === '[::1]'
+  )
+}
+
+/**
+ * Mirror of the wallet's `parseDappOrigin`: the wallet only talks to https origins and to http
+ * on loopback, in canonical form, with no trailing dot in the hostname. Anything else would make
+ * it refuse the popup, so fail early here with a clear message, before `window.open`.
+ */
+export function checkDappOrigin(origin: unknown): string {
+  if (typeof origin !== 'string' || !origin || origin === 'null') {
+    throw new SessionError(
+      'Biatec Direct needs a page with a real origin (http(s)); this page has an opaque origin'
+    )
+  }
+  let url: URL
+  try {
+    url = new URL(origin)
+  } catch {
+    throw new SessionError(`Biatec Direct cannot use this page origin: ${origin}`)
+  }
+  const canonical =
+    url.origin === origin &&
+    !url.hostname.endsWith('.') &&
+    (url.protocol === 'https:' || (url.protocol === 'http:' && isLoopbackHost(url.hostname)))
+  if (!canonical) {
+    throw new SessionError(
+      `Biatec Wallet only accepts dApps served over https, or over http on localhost / 127.0.0.1 / [::1]; this page's origin is ${origin}`
+    )
+  }
+  return origin
+}
+
 export function resolveWalletUrl(walletUrl: string): { origin: string; base: string } {
   let url: URL
   try {
@@ -193,6 +230,12 @@ interface Exchange {
   requestId: string
   responseReference: string
   validate: (result: unknown) => unknown
+}
+
+/** Per signTransactions call: memoised chain lookups and rekeys made earlier in the group. */
+interface VerifyState {
+  lookups: Map<string, Promise<string | undefined>>
+  groupAuth: Map<string, string | undefined>
 }
 
 class PopupSession {
@@ -494,14 +537,12 @@ export class DirectTransport {
         LiquidErrorCode.invalidInput
       )
     }
-    const dappOrigin = host.location.origin
-    if (!dappOrigin || dappOrigin === 'null') {
-      throw new SessionError(
-        'Biatec Direct needs a page with a real origin (http(s)); this page has an opaque origin'
-      )
-    }
+    const dappOrigin = checkDappOrigin(host.location.origin)
     const url = `${this.walletBase}${DIRECT_ROUTE}?origin=${encodeURIComponent(dappOrigin)}`
-    const popup = host.open(url, DIRECT_WINDOW_NAME, this.features(host))
+    // A UNIQUE window name per session: a fixed name would let this load navigate a popup left
+    // open by an earlier page load, which the wallet already treats as consumed (single-use).
+    const windowName = `${DIRECT_WINDOW_NAME}-${crypto.randomUUID()}`
+    const popup = host.open(url, windowName, this.features(host))
     if (!popup) throw new PopupBlockedError()
     const session = new PopupSession(
       host,
@@ -701,20 +742,24 @@ export class DirectTransport {
       // Everything below is re-validation of untrusted wallet output; it runs after the
       // session settled, so any throw here simply rejects the call.
       const results: (Uint8Array | null)[] = []
+      const state: VerifyState = { lookups: new Map(), groupAuth: new Map() }
       for (let index = 0; index < txnsToSign.length; index++) {
         const entry = txnsToSign[index]
         const value = stxns[index]
         if ((entry.signers && entry.signers.length === 0) || value === null) {
           results.push(null)
+          this.applyRekey(state, decoded[index].txn)
           continue
         }
         results.push(
           await this.verifySigned(
+            state,
             decodeBase64Field(value, `stxns[${index}]`, LIMITS.MAX_STXN_CHARS),
             decoded[index].txn,
             index
           )
         )
+        this.applyRekey(state, decoded[index].txn)
       }
       return results
     } catch (error) {
@@ -743,50 +788,65 @@ export class DirectTransport {
     )
   }
 
-  /** The address the chain says currently controls `sender` (its auth address), if rekeyed. */
-  private async chainAuthAddr(sender: string): Promise<string | undefined> {
-    if (!this.ctx.getAuthAddr) return undefined
-    try {
-      return await this.ctx.getAuthAddr(sender)
-    } catch (error) {
-      throw new LiquidProviderError(
-        `Could not confirm the signer of a rekeyed account: ${toError(error).message}`,
-        LiquidErrorCode.failedToPost
-      )
-    }
+  /** Chain auth address of `sender`, looked up at most once per sender per signing call. */
+  private chainAuthAddr(state: VerifyState, sender: string): Promise<string | undefined> {
+    const known = state.lookups.get(sender)
+    if (known) return known
+    const lookup = (async () => {
+      if (!this.ctx.getAuthAddr) return undefined
+      try {
+        return await this.ctx.getAuthAddr(sender)
+      } catch (error) {
+        throw new LiquidProviderError(
+          `Could not confirm the signer of a rekeyed account (network error: ${toError(error).message}); the wallet's answer was not accepted`,
+          LiquidErrorCode.failedToPost
+        )
+      }
+    })()
+    state.lookups.set(sender, lookup)
+    return lookup
   }
 
   /**
    * Checks that bytes returned by the wallet are really the transaction we asked it to sign:
    * a 64-byte raw signature (attached locally) or a signed transaction whose unsigned part has
-   * the same txID. ed25519 signatures are verified cryptographically against the sender, or, for
-   * a rekeyed sender, against the auth address, which is confirmed on chain (the wallet's own
-   * `sgnr` claim is never trusted by itself). msig/lsig/pqsig get structural checks only.
+   * the same txID. ed25519 signatures are verified cryptographically against the sender or, for
+   * a rekeyed sender, its auth address: first any rekey made by an EARLIER transaction of the
+   * same group (applied in order), else the chain (one memoised lookup per sender, only when
+   * the signature does not verify for the sender and the wallet did not claim the sender itself
+   * signed). The wallet's own `sgnr` claim is never trusted by itself. msig/lsig/pqsig get
+   * structural checks only.
    */
   private async verifySigned(
+    state: VerifyState,
     bytes: Uint8Array,
     original: algosdk.Transaction,
     index: number
   ): Promise<Uint8Array> {
     const sender = original.sender.toString()
     const message = original.bytesToSign()
+    const invalidSignature = () =>
+      new LiquidProviderError(
+        `Biatec Wallet returned an invalid signature at position ${index}`,
+        LiquidErrorCode.invalidInput
+      )
 
-    /** The address `signature` verifies for: the sender, else its chain-confirmed auth address. */
+    /** The address `signature` verifies for: the sender, else its effective auth address. */
     const signerFor = async (signature: Uint8Array, claimed?: string): Promise<string> => {
       if (signature.length !== 64) {
         throw invalid(`stxns[${index}] has a signature of the wrong length`)
       }
-      if (!claimed || claimed === sender) {
-        if (this.verifyEd25519(message, signature, sender)) return sender
-      }
-      const authAddr = await this.chainAuthAddr(sender)
+      const claimsSender = !claimed || claimed === sender
+      if (claimsSender && this.verifyEd25519(message, signature, sender)) return sender
+      // The wallet says the sender itself signed and that did not verify: nothing to look up.
+      if (claimed === sender) throw invalidSignature()
+      const authAddr = state.groupAuth.has(sender)
+        ? state.groupAuth.get(sender)
+        : await this.chainAuthAddr(state, sender)
       if (authAddr && (!claimed || claimed === authAddr)) {
         if (this.verifyEd25519(message, signature, authAddr)) return authAddr
       }
-      throw new LiquidProviderError(
-        `Biatec Wallet returned an invalid signature at position ${index}`,
-        LiquidErrorCode.invalidInput
-      )
+      throw invalidSignature()
     }
 
     if (bytes.length === 64) {
@@ -812,6 +872,15 @@ export class DirectTransport {
       throw invalid(`stxns[${index}] carries no signature`)
     }
     return bytes
+  }
+
+  /** A transaction's `rekeyTo` changes who must sign that sender's LATER transactions. */
+  private applyRekey(state: VerifyState, txn: algosdk.Transaction): void {
+    if (!txn.rekeyTo) return
+    const sender = txn.sender.toString()
+    const target = txn.rekeyTo.toString()
+    // Rekeying to itself restores the sender's own key as the (implicit) signer.
+    state.groupAuth.set(sender, target === sender ? undefined : target)
   }
 
   // ---------- Data signing (ARC-0060) ------------------------------------- //
