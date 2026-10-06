@@ -116,10 +116,17 @@ const STRANGER = stranger.addr.toString()
 
 /** Chain rekey state for the tests: sender address -> auth address. */
 const authAddrs: Record<string, string> = {}
+/** Arguments of every `.exclude()` call made on an account lookup. */
+const excluded: string[] = []
 const mockAlgodClient = {
-  accountInformation: (address: string) => ({
-    do: async () => ({ authAddr: authAddrs[address] })
-  })
+  accountInformation: (address: string) => {
+    // BaseWallet calls `.do()` directly; Direct's rekey lookup goes through `.exclude('all')`.
+    const query = {
+      do: async () => ({ authAddr: authAddrs[address] }),
+      exclude: (what: string) => (excluded.push(what), query)
+    }
+    return query
+  }
   // Test double: only the one algod method the adapter calls is implemented.
 } as unknown as algosdk.Algodv2
 
@@ -203,6 +210,7 @@ async function readyAndRequest<T>(run: () => Promise<T>) {
 
 beforeEach(() => {
   for (const key of Object.keys(authAddrs)) delete authAddrs[key]
+  excluded.length = 0
   vi.useFakeTimers()
   win = new FakeWindow()
   vi.stubGlobal('window', win)
@@ -1612,7 +1620,8 @@ describe('Direct transport — signature verification', () => {
     await connecting
     vi.spyOn(mockAlgodClient, 'accountInformation').mockImplementation(
       // Test double for the one algod call the adapter makes.
-      () => ({ do: async () => Promise.reject(new Error('algod down')) }) as never
+      () =>
+        ({ exclude: () => ({ do: async () => Promise.reject(new Error('algod down')) }) }) as never
     )
     const txn = makePayment(REKEYED, STRANGER)
     const error = await sign(ctx.adapter, txn, toBase64Url(txn.signTxn(account2.sk))).catch(
@@ -1767,6 +1776,8 @@ describe('Direct transport — signature verification robustness', () => {
     )
     expect(result).toHaveLength(2)
     expect(lookups).toHaveBeenCalledTimes(1)
+    expect(lookups).toHaveBeenCalledWith(REKEYED)
+    expect(excluded).toEqual(['all']) // the full asset/app lists are never downloaded
   })
 
   it('does not look the chain up when the wallet claims the sender signed and it does not verify', async () => {
@@ -1834,7 +1845,8 @@ describe('Direct transport — signature verification robustness', () => {
     const { adapter } = await connectAccounts([REKEYED])
     vi.spyOn(mockAlgodClient, 'accountInformation').mockImplementation(
       // Test double for the one algod call the adapter makes.
-      () => ({ do: async () => Promise.reject(new Error('algod down')) }) as never
+      () =>
+        ({ exclude: () => ({ do: async () => Promise.reject(new Error('algod down')) }) }) as never
     )
     const txn = payment(REKEYED, STRANGER)
     const network = await signGroup(adapter, [txn], [toBase64Url(txn.signTxn(account2.sk))]).catch(

@@ -186,7 +186,11 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       createStdSignData: this.createStdSignData,
       onDisconnect: this.onDisconnect,
       getAuthAddr: async (address) => {
-        const info = await this.getAlgodClient().accountInformation(address).do()
+        const info = await this.getAlgodClient()
+          .accountInformation(address)
+          // `authAddr` is still returned; skip the (possibly huge) asset/app lists.
+          .exclude('all')
+          .do()
         return info.authAddr?.toString()
       }
     }

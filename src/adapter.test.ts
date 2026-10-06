@@ -37,7 +37,11 @@ const account1 = algosdk.generateAccount()
 const ADDR1 = account1.addr.toString()
 
 const mockAlgodClient = {
-  accountInformation: () => ({ do: async () => ({ authAddr: undefined }) })
+  // BaseWallet calls `.do()` directly; Direct's rekey lookup goes through `.exclude('all')`.
+  accountInformation: () => {
+    const query = { do: async () => ({ authAddr: undefined }), exclude: () => query }
+    return query
+  }
 } as unknown as algosdk.Algodv2
 
 function createAdapter(
