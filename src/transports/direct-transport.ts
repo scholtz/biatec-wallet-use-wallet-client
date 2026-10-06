@@ -647,6 +647,8 @@ export class DirectTransport {
         this.connectTimeoutMs,
         this.checkNetwork(genesisHash)
       )
+      // Aborted while the response was being processed: never write accounts for a lost attempt.
+      if (handlers.signal?.aborted) throw new ConnectAbortedError()
       const accounts = this.storeAccounts(result, genesisHash)
       this.ctx.logger.info('Connected via Biatec Direct', { origin: this.walletOrigin })
       return accounts

@@ -161,6 +161,8 @@ browser, or force one with `biatec({ projectId, locale: 'sk' })` (see
 `biatec({ projectId, liquid: false, direct: false })` makes `connect()` always go straight to
 WalletConnect. Change which tab is pre-selected with `defaultMethod`.
 
+> **Upgrading:** the picker is skipped only when exactly **one** method is enabled. If you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`. With `onDisplayUri`, a picker-only overlay now appears unless exactly one method is enabled.
+
 ### Custom QR code instead of the built-in dialog
 
 The built-in dialog already renders a QR code and copy button, styled to match your dApp's light

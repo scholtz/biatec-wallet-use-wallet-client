@@ -1846,3 +1846,21 @@ describe('Direct transport — signature verification robustness', () => {
     expect(network.message).not.toMatch(/invalid signature/)
   })
 })
+
+describe('Direct transport — abort during response processing', () => {
+  it('never writes accounts when the signal aborted before the result was stored', async () => {
+    const { adapter } = createAdapter()
+    const transport = (adapter as unknown as { direct: DirectTransport }).direct
+    const controller = new AbortController()
+    const connecting = transport.connect({ signal: controller.signal })
+    connecting.catch(() => undefined)
+    fromWallet(readyMessage())
+    await flush()
+    const request = sentRequest()
+    // Abort in the same turn the response arrives (after the session settled successfully).
+    fromWallet(response(request, LiquidReference.enableResponse, enableResult(request)))
+    controller.abort()
+    await expect(connecting).rejects.toThrow(/cancelled/)
+    expect(adapter.isConnected).toBe(false)
+  })
+})

@@ -85,8 +85,9 @@ export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions,
   onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
   /**
    * Liquid Auth (passkey-linked WebRTC) transport configuration. Enabled by default with
-   * Biatec's hosted signaling service; pass `false` to disable it entirely, in which case
-   * `connect()` always uses WalletConnect and skips the method picker.
+   * Biatec's hosted signaling service; pass `false` to disable it entirely. The method
+   * picker is skipped only when exactly ONE method is enabled, so to keep the old
+   * "always WalletConnect" behaviour also pass `direct: false`.
    */
   liquid?: LiquidTransportOptions | false
   /**

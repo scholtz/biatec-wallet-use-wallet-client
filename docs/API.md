@@ -42,7 +42,7 @@ import { ScopeType, SignDataError } from '@txnlab/use-wallet'
 `biatec()` registers a **single** wallet (id `biatec`) that supports both WalletConnect v2 and
 Liquid Auth (passkey-linked WebRTC) — there is no separate `biatecLiquid()` factory or
 `biatec-liquid` wallet id. Configure Liquid Auth via the nested `liquid` option, or set
-`liquid: false` to disable it and always connect over WalletConnect.
+`liquid: false` to disable it. The picker is skipped only when exactly one method is enabled: if you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`.
 
 ## `biatec(options)`
 
