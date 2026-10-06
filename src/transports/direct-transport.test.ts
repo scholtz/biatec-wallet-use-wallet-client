@@ -1239,6 +1239,92 @@ describe('Direct transport — signData (ARC-0060)', () => {
     }
   })
 
+  describe('rekeyed signer', () => {
+    const rekeyedAccount = algosdk.generateAccount()
+    const REKEYED_SIGNER = rekeyedAccount.addr.toString()
+
+    async function signWith(
+      signer: algosdk.Account | undefined,
+      lookupFails = false
+    ): Promise<{ result: Promise<unknown> }> {
+      authAddrs[REKEYED_SIGNER] = ADDR2
+      const ctx = createAdapter()
+      const { connecting, request: enable } = await startConnect(ctx.adapter)
+      fromWallet(
+        response(
+          enable,
+          LiquidReference.enableResponse,
+          enableResult(enable, { accounts: [{ address: REKEYED_SIGNER }] })
+        )
+      )
+      await connecting
+      if (lookupFails) {
+        // Only the rekey lookup (`.exclude()`) fails; BaseWallet's own `.do()` keeps working.
+        vi.spyOn(mockAlgodClient, 'accountInformation').mockImplementation(
+          // Test double for the one algod call the adapter makes.
+          () =>
+            ({
+              do: async () => ({ authAddr: undefined }),
+              exclude: () => ({ do: async () => Promise.reject(new Error('algod down')) })
+            }) as never
+        )
+      }
+      win.open.mockClear()
+      const signing = ctx.adapter.signData(data, metadata)
+      signing.catch(() => undefined)
+      fromWallet(readyMessage())
+      await requestPosted()
+      const request = sentRequest()
+      const signature = await signArc60(signer ?? account1, request.params.items[0])
+      fromWallet(
+        response(request, LiquidReference.signDataResponse, {
+          providerId: 'dapp-provider',
+          signatures: [toBase64Url(signature)]
+        })
+      )
+      return { result: signing }
+    }
+
+    it('accepts a signature by the auth address of a rekeyed signer', async () => {
+      const { result } = await signWith(account2)
+      expect(await result).toMatchObject({ signature: expect.any(Uint8Array) })
+    })
+
+    it('rejects a signature by neither the signer nor its auth address', async () => {
+      const { result } = await signWith(stranger)
+      const error = await result.catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(SignDataError)
+      expect((error as SignDataError).code).toBe(4200)
+      expect((error as Error).message).toMatch(/invalid data signature/)
+    })
+
+    it('reports a failing chain lookup as a network error (4300), not an invalid signature', async () => {
+      const { result } = await signWith(account2, true)
+      const error = await result.catch((e: unknown) => e)
+      expect(error).toBeInstanceOf(SignDataError)
+      expect((error as SignDataError).code).toBe(4300)
+      expect((error as Error).message).toMatch(/Could not confirm the signer/)
+    })
+
+    it('does not look the chain up when the signer key itself signed', async () => {
+      const { adapter } = await connectAdapter()
+      const signing = adapter.signData(data, metadata)
+      signing.catch(() => undefined)
+      fromWallet(readyMessage())
+      await requestPosted()
+      const request = sentRequest()
+      const signature = await signArc60(account1, request.params.items[0])
+      fromWallet(
+        response(request, LiquidReference.signDataResponse, {
+          providerId: 'dapp-provider',
+          signatures: [toBase64Url(signature)]
+        })
+      )
+      await signing
+      expect(excluded).toEqual([])
+    })
+  })
+
   const failures: [string, unknown, number][] = [
     ['null signature', { providerId: 'dapp-provider', signatures: [null] }, 4001],
     ['empty providerId', { providerId: '', signatures: [toBase64Url(new Uint8Array(64))] }, 4200],

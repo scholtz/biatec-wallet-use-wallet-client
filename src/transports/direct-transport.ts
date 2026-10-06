@@ -950,7 +950,15 @@ export class DirectTransport {
       if (signatureBytes.length !== 64) throw invalid('signatures[0] must be exactly 64 bytes')
       const digest = await arc60Digest(stdSignData.data, stdSignData.authenticatorData)
       const signerAddress = algosdk.encodeAddress(stdSignData.signer)
-      if (!this.verifyEd25519(digest, signatureBytes, signerAddress)) {
+      let verified = this.verifyEd25519(digest, signatureBytes, signerAddress)
+      if (!verified) {
+        // The wallet signs with the key of the rekeyed-to account when the account is rekeyed
+        // (a chain lookup failure is a network error, distinct from an invalid signature).
+        const state: VerifyState = { lookups: new Map(), groupAuth: new Map() }
+        const authAddr = await this.chainAuthAddr(state, signerAddress)
+        verified = !!authAddr && this.verifyEd25519(digest, signatureBytes, authAddr)
+      }
+      if (!verified) {
         throw new LiquidProviderError(
           'Biatec Wallet returned an invalid data signature',
           LiquidErrorCode.invalidInput

@@ -54,7 +54,7 @@ export type ConnectErrorKind =
 export interface ConnectMethodState {
   status: 'connecting' | 'ready' | 'error' | 'popup-blocked'
   uri?: string
-  /** The raw (English, integrator-facing) message; only logged, never rendered. */
+  /** The raw (English, integrator-facing) message; logged by the adapter, never rendered. */
   error?: string
   /** Rendered through `BiatecTranslation`; `genericError` when absent. */
   errorKind?: ConnectErrorKind
@@ -306,6 +306,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     }
   }
 
+  let directPhase: 'connecting' | 'failed' | 'idle' | undefined
+
   function renderDirectContent(state: ConnectMethodState | undefined): void {
     if (!contentEl) return
     const methodLabel = i18n.methodLabel.direct
@@ -335,8 +337,11 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     openButton.onclick = () => options.onSelectMethod('direct')
     const cancelButton = contentEl.querySelector<HTMLButtonElement>('.bcd-cancel')
     if (cancelButton) cancelButton.onclick = cancel
-    // Keyboard users land on the primary action whenever the panel is (re)shown idle or failed.
-    if (!connecting) openButton.focus()
+    // Keyboard users land on the primary action when the panel is first shown or enters
+    // idle/failed from another state, but not on a re-render (e.g. a language switch).
+    const phase = connecting ? 'connecting' : failed ? 'failed' : 'idle'
+    if (!connecting && phase !== directPhase) openButton.focus()
+    directPhase = phase
   }
 
   function renderContent(): void {
@@ -346,6 +351,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
       renderDirectContent(state)
       return
     }
+    directPhase = undefined
     const methodLabel = i18n.methodLabel[selected]
     if (!state || state.status === 'connecting') {
       contentEl.innerHTML = `<div class="bcd-content-state"><div class="bcd-spinner"></div><p class="bcd-hint">${escapeHtml(formatMethod(i18n.preparing, methodLabel))}</p></div>`

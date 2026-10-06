@@ -402,6 +402,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
             if (settled) return
             const message = error instanceof Error ? error.message : String(error)
             const errorKind = classifyConnectError(error)
+            this.logger.warn(`Connection method "${method}" failed: ${message}`)
             if (showContent && error instanceof PopupBlockedError) {
               // Not a failure of the method: the dialog stays open so the user can click again.
               dialog.setState(method, {

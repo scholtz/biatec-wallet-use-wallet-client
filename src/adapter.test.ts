@@ -341,6 +341,21 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
     expect(mocks.signClient.connect).not.toHaveBeenCalled()
   })
 
+  it('logs the raw error of a failed method (the dialog only shows generic copy)', async () => {
+    const { adapter } = createDialogAdapter()
+    const warn = vi.spyOn(adapter['logger'], 'warn').mockImplementation(() => undefined)
+    mocks.signClient.connect.mockRejectedValue(new Error('relay exploded'))
+    void adapter.connect().catch(() => undefined)
+    await vi.waitFor(() =>
+      expect(dialogSetState).toHaveBeenCalledWith(
+        'walletconnect',
+        expect.objectContaining({ status: 'error', error: 'relay exploded' })
+      )
+    )
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('walletconnect'))
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('relay exploded'))
+  })
+
   it('rejects a defaultMethod that is not enabled, and connecting with a disabled method', async () => {
     expect(() => createDialogAdapter({ defaultMethod: 'liquid', liquid: false })).toThrow(
       /defaultMethod/

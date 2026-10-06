@@ -47,3 +47,17 @@ test('the language switcher survives switching connection methods', async ({ pag
   await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'cs')
   await expect(page.locator('.bcd-locale')).toHaveCount(10)
 })
+
+test('a language switch does not steal keyboard focus back to the Direct open button', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await page.click('[data-method="direct"]')
+  await expect(page.locator('.bcd-open')).toBeFocused()
+
+  // Move focus to a locale flag and switch language: the re-render must leave focus alone.
+  await page.focus('[data-locale="cs"]')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'cs')
+  await expect(page.locator('.bcd-open')).not.toBeFocused()
+})
