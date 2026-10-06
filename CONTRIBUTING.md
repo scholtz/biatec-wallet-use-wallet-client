@@ -50,7 +50,7 @@ Run an example against your change: `pnpm build` first (examples import the buil
 
 ## Tests
 
-`BiatecWalletAdapter` (`src/adapter.ts`) is a thin dispatcher over two transports, and the test
+`BiatecWalletAdapter` (`src/adapter.ts`) is a thin dispatcher over three transports, and the test
 suites mirror that split:
 
 - `src/adapter.test.ts` — dispatch only: method picker shown/skipped, `resumeSession()` branching

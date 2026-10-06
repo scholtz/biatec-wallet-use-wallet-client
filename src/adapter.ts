@@ -78,7 +78,7 @@ export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions,
    * Called with the pairing/session URI instead of showing the built-in dialog's content. Use
    * it to render your own QR code / deep link UI. `connect()` resolves once the wallet approves
    * the connection, so you can close your UI then. `info.method` tells you which transport
-   * produced the URI. The built-in method picker still appears when both transports are enabled
+   * produced the URI. The built-in method picker still appears when more than one method is enabled
    * and no `method` was given to `connect()` — this option only replaces the content step, not
    * the picker.
    */

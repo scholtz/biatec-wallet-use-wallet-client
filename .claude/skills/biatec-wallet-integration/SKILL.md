@@ -94,7 +94,7 @@ export const walletManager = new WalletManager({
         url: typeof window !== 'undefined' ? window.location.origin : '',
         icons: [/* absolute URL to an icon, or [] */]
       }
-      // liquid: false // uncomment to disable Liquid Auth and always use WalletConnect — see Step 5b
+      // liquid: false, direct: false // uncomment to always use WalletConnect (no picker) — see Steps 5b/5c
     })
   ],
   defaultNetwork: 'testnet' // 'mainnet' once ready for production; see Step 5 for other networks
@@ -105,15 +105,15 @@ Read the project id from whatever env var convention the framework uses
 (`import.meta.env.VITE_*` for Vite, `process.env.NEXT_PUBLIC_*` for Next.js, etc.) — **never**
 hardcode it as a literal string in committed code. Add the corresponding entry to `.env.example`
 if one exists. **`projectId` is required even if the dApp mainly wants Liquid Auth** (Step 5b), unless WalletConnect is switched off with `walletconnect: false` (Direct-only, Step 5c) —
-`biatec()` covers both transports under one wallet.
+`biatec()` covers all three transports under one wallet.
 
 `metadata` is optional; omitting it makes the adapter read `<title>`/`<meta description>`/favicon
 from the page at connect time. Prefer setting it explicitly for a stable, intentional presentation
 inside Biatec Wallet's approval screen.
 
-`biatec()` registers **one** wallet (id `biatec`) that supports both WalletConnect and Liquid Auth
-— Liquid Auth is enabled by default. `wallet.connect()` with no arguments shows a built-in picker
-letting the user choose; pass `liquid: false` to disable Liquid Auth and skip that picker entirely
+`biatec()` registers **one** wallet (id `biatec`) that supports WalletConnect, Liquid Auth and Direct
+— the latter two are enabled by default. `wallet.connect()` with no arguments shows a built-in picker
+letting the user choose; pass `liquid: false, direct: false` to skip that picker entirely (it is skipped only when exactly one method is enabled)
 (see Step 5b for when to keep it enabled).
 
 ## 3. Detect the framework and continue accordingly
@@ -227,7 +227,7 @@ walletManager.subscribe(() => {
 ## 5. Default pairing UI (do nothing) / optional fully custom UI
 
 By default — i.e. don't pass `onDisplayUri` at all — `connect()` shows the adapter's own built-in
-dialog: one window with a method selector (WalletConnect / Liquid Auth, when both are enabled) on
+dialog: one window with a method selector (WalletConnect / Liquid Auth / Direct, when several are enabled) on
 the left and a QR code, the raw pairing/session link, and a copy button on the right, matching the
 system's light/dark theme. **This is almost always the right choice** — don't build a custom
 pairing dialog unless the user explicitly asks for one; just call `biatec({ projectId, ... })`
@@ -275,11 +275,11 @@ biatec({
   liquid: {
     // origin: 'https://liquid.biatec.io' // default; only change for a self-hosted service
   }
-  // liquid: false // disable Liquid Auth entirely — connect() always uses WalletConnect, no picker
+  // liquid: false, direct: false // connect() always uses WalletConnect, no picker
 })
 ```
 
-With both transports enabled (the default), calling `wallet.connect()` with no arguments shows a
+With several methods enabled (the default), calling `wallet.connect()` with no arguments shows a
 **built-in, modern dialog**: a method selector (WalletConnect / Liquid Auth / Biatec Direct) next
 to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — WalletConnect selected by default so its QR appears
 immediately, with a tab to switch to Liquid Auth on demand. It follows the system's light/dark

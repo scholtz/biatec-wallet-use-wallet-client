@@ -14,7 +14,7 @@ Wallet. For the researched background this design is based on, see [RESEARCH.md]
    Stable id, full store/network access, works unmodified with every framework binding.
 
 We use (2). We also don't subclass the official `@txnlab/use-wallet-walletconnect` adapter, even
-though one of our two transports is the same WalletConnect v2 client — that adapter's
+though one of our transports is the same WalletConnect v2 client — that adapter's
 `client`/`session` fields are `private`, so nothing outside it can add ARC-0060 support or the
 multi-chain session behavior described below. `BiatecWalletAdapter` reimplements the same
 transaction-signing flow (same wire format, same helper functions from `@txnlab/use-wallet/adapter`)
@@ -37,7 +37,7 @@ session is using:
 Each transport can be switched off (`walletconnect: false`, `liquid: false`, `direct: false`);
 the adapter keeps a nullable field per transport and dispatches through `getTransport(method)`.
 
-Both transports receive a `TransportContext` (`src/transports/types.ts`) built once in the
+Every transport receives a `TransportContext` (`src/transports/types.ts`) built once in the
 adapter's constructor: bound references to `this.store`, `this.logger`, `this.addresses`,
 `this.activeNetworkConfig`, `this.createStdSignData` and `this.onDisconnect`. Transports read and
 mutate adapter state entirely through this context — they never touch `BaseWallet` internals
@@ -51,8 +51,8 @@ connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 
 - `args.method` given → skip the dialog's method selector, connect with that transport directly
   (the dialog still appears to show its QR/link, unless `onDisplayUri` is set).
-- No `args`, both transports enabled → `src/connect-dialog.ts`'s `openConnectDialog()` shows a
-  single modern dialog: a method selector (WalletConnect / Liquid Auth) on one side, and the
+- No `args`, more than one method enabled → `src/connect-dialog.ts`'s `openConnectDialog()` shows a
+  single modern dialog: a method selector (WalletConnect / Liquid Auth / Direct) on one side, and the
   pairing QR code / link for whichever method is selected on the other. WalletConnect is
   selected — and its `connect()` kicked off — immediately when the dialog opens, so its QR is
   visible without an extra click; switching to the Liquid Auth tab lazily starts that transport's
@@ -77,7 +77,7 @@ connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 Whichever transport is chosen calls back into the adapter's `onDisplayUri` (if the consumer
 supplied one) with a `BiatecDisplayUriInfo` (`{ method, requestId?, origin? }`) — enough to label
 a custom QR dialog per transport. When `onDisplayUri` is set, the built-in dialog renders in
-"picker-only" mode: it still shows the method selector (when both transports are enabled) but no
+"picker-only" mode: it still shows the method selector (when more than one method is enabled) but no
 content, and closes itself the moment a method is picked, handing off entirely to the consumer's
 own UI for that method's URI.
 

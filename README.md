@@ -130,19 +130,19 @@ new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
 
 `biatec(options)` accepts:
 
-| Option            | Type                                                                 | Default                                    | Description                                                                                                                                              |
-| ----------------- | -------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `projectId`       | `string`                                                             | **required** unless `walletconnect: false` | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                    |
-| `walletconnect`   | `false`                                                              | enabled                                    | Pass `false` to disable the WalletConnect transport; this is the only case where `projectId` may be omitted.                                             |
-| `relayUrl`        | `string`                                                             | `wss://relay.walletconnect.com`            | WalletConnect relay.                                                                                                                                     |
-| `metadata`        | `SignClientTypes.Metadata`                                           | detected from the document                 | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for both transports.                                                   |
-| `onDisplayUri`    | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                                          | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves. |
-| `enableSignData`  | `boolean`                                                            | `true`                                     | Expose `signData()` on both transports. Set `false` to advertise transaction signing only.                                                               |
-| `chains`          | `string[]`                                                           | `[]`                                       | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).          |
-| `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults                   | Liquid Auth transport config, or `false` to disable it and always use WalletConnect. See [docs/API.md](docs/API.md#biatecliquidtransportoptions).        |
-| `direct`          | `BiatecDirectTransportOptions \| false`                              | enabled, Biatec defaults                   | Direct (popup + postMessage) transport config, or `false` to disable it. See [docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md).                         |
-| `defaultMethod`   | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'walletconnect'`                          | Method pre-selected in the connect dialog (must be enabled).                                                                                             |
-| `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo                         | Override how the wallet appears in your wallet picker.                                                                                                   |
+| Option            | Type                                                                 | Default                                    | Description                                                                                                                                                                 |
+| ----------------- | -------------------------------------------------------------------- | ------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`       | `string`                                                             | **required** unless `walletconnect: false` | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                                       |
+| `walletconnect`   | `false`                                                              | enabled                                    | Pass `false` to disable the WalletConnect transport; this is the only case where `projectId` may be omitted.                                                                |
+| `relayUrl`        | `string`                                                             | `wss://relay.walletconnect.com`            | WalletConnect relay.                                                                                                                                                        |
+| `metadata`        | `SignClientTypes.Metadata`                                           | detected from the document                 | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for every transport.                                                                      |
+| `onDisplayUri`    | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                                          | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves.                    |
+| `enableSignData`  | `boolean`                                                            | `true`                                     | Expose `signData()` on all enabled transports. Set `false` to advertise transaction signing only.                                                                           |
+| `chains`          | `string[]`                                                           | `[]`                                       | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).                             |
+| `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults                   | Liquid Auth transport config, or `false` to disable it (pass `direct: false` too to always use WalletConnect). See [docs/API.md](docs/API.md#biatecliquidtransportoptions). |
+| `direct`          | `BiatecDirectTransportOptions \| false`                              | enabled, Biatec defaults                   | Direct (popup + postMessage) transport config, or `false` to disable it. See [docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md).                                            |
+| `defaultMethod`   | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'walletconnect'`                          | Method pre-selected in the connect dialog (must be enabled).                                                                                                                |
+| `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo                         | Override how the wallet appears in your wallet picker.                                                                                                                      |
 
 ### Choosing a connection method
 
@@ -246,8 +246,8 @@ new WalletManager({
 })
 ```
 
-One wallet entry (id `biatec`) covers both transports — `connect()` shows a built-in picker
-between them (see [Choosing a connection method](#choosing-a-connection-method) above).
+One wallet entry (id `biatec`) covers all three transports — `connect()` shows a built-in picker
+between the enabled ones (see [Choosing a connection method](#choosing-a-connection-method) above).
 `signTransactions()` and `signData()` behave the same regardless of which transport connected.
 See [docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) for the full protocol, the
 `liquid` option in [docs/API.md](docs/API.md#biatecliquidtransportoptions), and the service

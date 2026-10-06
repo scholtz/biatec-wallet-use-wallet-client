@@ -65,8 +65,8 @@ name/icon inside Biatec Wallet's approval screen.
 `biatec()` registers **one** wallet that supports both WalletConnect and Liquid Auth (a
 passkey-linked, peer-to-peer WebRTC transport — no relay in the signing path) — Liquid Auth is
 enabled by default with Biatec's hosted service. When the user calls `connect()`, they get a
-built-in picker between the two; pass `liquid: false` to disable Liquid Auth and always connect
-over WalletConnect instead. See [§ 9](#9-liquid-auth-and-the-method-picker) below.
+built-in picker between the enabled methods; pass `liquid: false, direct: false` to disable Liquid
+Auth and Direct and always connect over WalletConnect instead. See [§ 9](#9-liquid-auth-and-the-method-picker) below.
 
 ## 4. Wire it into your framework
 
@@ -225,7 +225,7 @@ optional chain up front. See [docs/ARCHITECTURE.md](ARCHITECTURE.md#multi-chain-
 ## 8. Custom pairing UI (advanced, optional)
 
 By default `connect()` shows the adapter's own built-in dialog — one window with a method
-selector on the left (when both transports are enabled) and a QR code, the raw pairing/session
+selector on the left (when more than one method is enabled) and a QR code, the raw pairing/session
 link, and a copy button on the right. Both example apps in this repo use exactly this default
 (no `onDisplayUri` set) — open one of them (`pnpm --filter example-vanilla-ts dev` or
 `example-react-ts`) to see it.
@@ -247,7 +247,7 @@ biatec({
 wallet.connect() } finally { hideMyQrDialog() }` pattern works well — call your close function in
 a `finally` block so the dialog also disappears if the user cancels or the connection fails, not
 only on success. Setting `onDisplayUri` still leaves the built-in method selector in place when
-both transports are enabled (it only replaces the QR/link step); render your own QR code with a
+more than one method is enabled (it only replaces the QR/link step); render your own QR code with a
 library such as [`qrcode`](https://www.npmjs.com/package/qrcode), and remember
 `navigator.clipboard.writeText()` for a copy button requires a secure context (`https://` or
 `localhost`).
@@ -271,13 +271,13 @@ biatec({
 })
 ```
 
-With both transports enabled, calling `wallet.connect()` with no arguments shows a built-in,
-dark/light-aware dialog: a method selector (WalletConnect / Liquid Auth) next to a live QR code
-for whichever one is selected. WalletConnect is selected by default so its QR shows immediately;
+With several methods enabled (the default), calling `wallet.connect()` with no arguments shows a built-in,
+dark/light-aware dialog: a method selector (WalletConnect / Liquid Auth / Biatec Direct) next to a
+live QR code (or an Open Biatec Wallet button, for Direct) for whichever one is selected. WalletConnect is selected by default so its QR shows immediately;
 clicking the Liquid Auth tab connects that transport and shows its QR instead. To build your own
 picker, call `wallet.connect({ method: 'liquid' })` or `wallet.connect({ method: 'walletconnect' })`
-directly and skip the built-in one. To disable Liquid Auth entirely and always go straight to
-WalletConnect, pass `liquid: false`.
+directly and skip the built-in one. To always go straight to WalletConnect (no picker),
+pass `liquid: false, direct: false`.
 
 Once connected, the user opens Biatec Wallet → Connect → Liquid Auth (or scans the QR your
 `onDisplayUri` renders), pastes/scans the link, and approves with a passkey; `connect()` resolves

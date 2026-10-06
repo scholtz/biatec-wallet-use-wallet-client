@@ -932,6 +932,9 @@ export class DirectTransport {
       return { ...stdSignData, signature: signatureBytes }
     } catch (error) {
       session?.abort(toError(error))
+      // A blocked popup is not a signing failure: surface it unchanged (like signTransactions)
+      // so callers can ask the user to allow popups and click again.
+      if (error instanceof PopupBlockedError) throw error
       if (error instanceof SignDataError) {
         this.ctx.logger.error('Error signing data:', error.message)
         throw error

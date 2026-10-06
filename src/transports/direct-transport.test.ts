@@ -1210,13 +1210,12 @@ describe('Direct transport — signData (ARC-0060)', () => {
     expect(error.code).toBe(expected)
   })
 
-  it('maps a blocked popup to SignDataError 4300 keeping PopupBlockedError as the cause', async () => {
+  it('rejects with PopupBlockedError unchanged when the popup is blocked', async () => {
     const { adapter } = await connectAdapter()
     win.blocked = true
     const error = await adapter.signData(data, metadata).catch((e) => e)
-    expect(error).toBeInstanceOf(SignDataError)
-    expect(error.code).toBe(4300)
-    expect(error.data).toBeInstanceOf(PopupBlockedError)
+    expect(error).toBeInstanceOf(PopupBlockedError)
+    expect(error).not.toBeInstanceOf(SignDataError)
   })
 
   it('rejects with 4200 without opening a popup when signData is disabled', async () => {

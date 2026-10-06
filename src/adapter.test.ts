@@ -76,7 +76,7 @@ afterEach(() => {
 })
 
 describe('BiatecWalletAdapter — dispatch', () => {
-  it('shows the built-in dialog when both transports are enabled and no method is given', async () => {
+  it('shows the built-in dialog when several methods are enabled and no method is given', async () => {
     const { adapter } = createAdapter()
     mocks.signClient.connect.mockResolvedValue({
       uri: 'wc:uri',
