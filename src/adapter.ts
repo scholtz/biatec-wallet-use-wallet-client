@@ -19,8 +19,13 @@ import {
   type WalletMetadata
 } from '@txnlab/use-wallet/adapter'
 import { BIATEC_WALLET_URL } from './adapter-constants'
-import { openConnectDialog, type ConnectDialogController } from './connect-dialog'
-import { PopupBlockedError, SessionError } from './errors'
+import {
+  openConnectDialog,
+  type ConnectDialogController,
+  type ConnectErrorKind
+} from './connect-dialog'
+import { DirectNetworkMismatchError, PopupBlockedError, SessionError } from './errors'
+import { LiquidErrorCode, LiquidProviderError } from './liquid/protocol'
 import { ICON } from './icon'
 import type { HelloResult } from './liquid/protocol'
 import { DirectTransport, type DirectTransportOptions } from './transports/direct-transport'
@@ -102,6 +107,20 @@ export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions,
 export interface ConnectArgs {
   /** Skip the built-in method picker and connect with this transport directly. */
   method?: BiatecMethod
+}
+
+/** Maps a failed connect attempt to the localized copy the dialog shows (raw text is only logged). */
+function classifyConnectError(error: unknown): ConnectErrorKind | undefined {
+  if (error instanceof PopupBlockedError) return 'popupBlocked'
+  if (error instanceof DirectNetworkMismatchError) return 'wrongNetwork'
+  if (error instanceof LiquidProviderError) {
+    if (error.code === LiquidErrorCode.networkNotSupported) return 'wrongNetwork'
+    if (error.code === LiquidErrorCode.timedOut) return 'timedOut'
+    if (error.code === LiquidErrorCode.cancelled) {
+      return /closed/i.test(error.message) ? 'walletClosed' : 'userRejected'
+    }
+  }
+  return undefined
 }
 
 /** What the three transports have in common once connected. */
@@ -322,6 +341,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       let settled = false
       const started = new Set<BiatecMethod>()
       const failed = new Set<BiatecMethod>()
+      /** Methods the user explicitly picked in the dialog (as opposed to the pre-selected default). */
+      const picked = new Set<BiatecMethod>()
       const controller = new AbortController()
 
       // Everything from here to `attempt(defaultMethod)` below is synchronous (no `await`), so
@@ -333,7 +354,10 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
         ...(this.locale ? { locale: this.locale } : {}),
         // For `direct` with dialog content this is the "Open Biatec Wallet" button's click
         // handler, so `attempt` -> `window.open` runs synchronously inside that click.
-        onSelectMethod: (method) => attempt(method),
+        onSelectMethod: (method) => {
+          picked.add(method)
+          attempt(method)
+        },
         onCancel: () => {
           if (settled) return
           settled = true
@@ -377,13 +401,34 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
           .catch((error: unknown) => {
             if (settled) return
             const message = error instanceof Error ? error.message : String(error)
+            const errorKind = classifyConnectError(error)
             if (showContent && error instanceof PopupBlockedError) {
               // Not a failure of the method: the dialog stays open so the user can click again.
-              dialog.setState(method, { status: 'popup-blocked', error: message })
+              dialog.setState(method, {
+                status: 'popup-blocked',
+                error: message,
+                errorKind: 'popupBlocked'
+              })
+              return
+            }
+            // Picker-only mode (consumer renders its own UI): the dialog closed when the user
+            // picked Direct, so there is nothing left to retry from — the user's chosen method
+            // failed, report it now instead of waiting for the other pairings to expire.
+            if (!showContent && method === 'direct' && picked.has(method)) {
+              settled = true
+              controller.abort()
+              dialog.close()
+              reject(error)
               return
             }
             failed.add(method)
-            if (showContent) dialog.setState(method, { status: 'error', error: message })
+            if (showContent) {
+              dialog.setState(method, {
+                status: 'error',
+                error: message,
+                ...(errorKind ? { errorKind } : {})
+              })
+            }
             if (failed.size === methods.length) {
               settled = true
               dialog.close()

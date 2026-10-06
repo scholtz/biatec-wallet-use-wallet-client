@@ -99,6 +99,27 @@ export function parseReady(data: unknown): DirectReady {
   }
 }
 
+/** Upper bound on the wallet's network list carried in a 4004 error. */
+export const MAX_ERROR_GENESIS_HASHES = 8
+
+/**
+ * The only `error.data` the SDK keeps: the wallet's network list on a 4004, as
+ * `{ genesisHashes: string[] }` containing valid 32-byte hashes only, at most
+ * {@link MAX_ERROR_GENESIS_HASHES}. Anything else is dropped (never surfaced to callers).
+ */
+export function sanitizeErrorData(data: unknown): { genesisHashes: string[] } | undefined {
+  if (!isRecord(data)) return undefined
+  const raw = Array.isArray(data.genesisHashes)
+    ? data.genesisHashes
+    : data.genesisHash !== undefined
+      ? [data.genesisHash]
+      : []
+  const genesisHashes = raw
+    .filter((h): h is string => typeof h === 'string' && decodeGenesisHash(h) !== null)
+    .slice(0, MAX_ERROR_GENESIS_HASHES)
+  return genesisHashes.length > 0 ? { genesisHashes } : undefined
+}
+
 export interface ParsedResponse {
   /** Present when the wallet answered with an error. */
   error?: { code: number; message: string; data?: unknown }
@@ -130,11 +151,12 @@ export function parseResponseEnvelope(
     ) {
       throw invalid('error must be { code: integer, message: string }')
     }
+    const errorData = sanitizeErrorData(error.data)
     return {
       error: {
         code: error.code,
         message: error.message.slice(0, MAX_ERROR_MESSAGE),
-        ...(error.data !== undefined ? { data: error.data } : {})
+        ...(errorData !== undefined ? { data: errorData } : {})
       }
     }
   }

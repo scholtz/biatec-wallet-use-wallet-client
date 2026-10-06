@@ -268,7 +268,7 @@ popup (`connect`, `signTransactions`, `signData`) must be made from a user gestu
 before it. Errors: `PopupBlockedError` (browser blocked the popup), `DirectNetworkMismatchError`
 (wallet error `4004`, carries `genesisHash` and `walletGenesisHashes`), `LiquidProviderError`
 (`code` `4001` rejected / popup closed, `4002` timed out, `4003` unsupported version, `4100`
-site not connected in the wallet, `4200` malformed or tampered wallet response). Exported
+site not connected in the wallet, `4200` malformed or tampered wallet response). `signData()` wraps every Direct failure into a `SignDataError` (ARC-0060 codes) **except** `PopupBlockedError`, which is rethrown unchanged so the UI can ask the user to allow popups and click again. Exported
 constants: `DIRECT_PROTOCOL_VERSION`, `DIRECT_READY_REFERENCE`, `DIRECT_ROUTE`,
 `DIRECT_WINDOW_NAME`; protocol types: `EnableParams`, `EnableResult`, `EnableAccount` (and
 `LiquidReference.enableRequest/enableResponse/disableRequest/disableResponse`). Protocol:

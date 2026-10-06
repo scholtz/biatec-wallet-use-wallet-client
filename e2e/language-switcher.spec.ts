@@ -29,7 +29,7 @@ test('shows one flag per supported language and switches live without closing', 
   await page.click('[data-locale="sk"]')
   await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'sk')
   await expect(page.locator('.bcd-title')).toHaveText('Pripojiť Biatec Wallet')
-  await expect(page.locator('.bcd-subtitle')).toHaveText('Vyberte spôsob a naskenujte kód')
+  await expect(page.locator('.bcd-subtitle')).toHaveText('Vyberte, ako sa pripojiť')
   // The dialog must stay open and keep its state — switching language only re-renders text.
   await expect(panel).toBeVisible()
   await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')

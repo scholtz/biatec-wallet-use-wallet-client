@@ -8,6 +8,7 @@ import { DirectNetworkMismatchError, PopupBlockedError } from '../errors'
 import {
   LiquidProviderError,
   LiquidReference,
+  fromBase64Url,
   toBase64Url,
   type LiquidRequestMessage
 } from '../liquid/protocol'
@@ -173,6 +174,28 @@ function makePayment(sender: string, receiver: string, amount = 1000): algosdk.T
       genesisHash: algosdk.base64ToBytes(GENESIS_HASH)
     }
   })
+}
+
+/**
+ * What Biatec Wallet signs for ARC-0060: ed25519 over sha256(data) || sha256(authenticatorData)
+ * with the account's key. Node's crypto signs raw ed25519 (algosdk's signBytes adds an "MX" tag).
+ */
+async function signArc60(
+  account: algosdk.Account,
+  item: { data: string; authenticatorData: string }
+): Promise<Uint8Array> {
+  const sha256 = async (bytes: Uint8Array) =>
+    new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource))
+  const dataHash = await sha256(algosdk.base64ToBytes(item.data))
+  const authHash = await sha256(fromBase64Url(item.authenticatorData))
+  const digest = new Uint8Array([...dataHash, ...authHash])
+  const { createPrivateKey, sign } = await import('node:crypto')
+  const pkcs8 = Buffer.concat([
+    Buffer.from('302e020100300506032b657004220420', 'hex'),
+    Buffer.from(account.sk.slice(0, 32))
+  ])
+  const key = createPrivateKey({ key: pkcs8, format: 'der', type: 'pkcs8' })
+  return new Uint8Array(sign(null, digest, key))
 }
 
 /** Starts connect(), answers `ready` and returns the pending promise plus the sent request. */
@@ -621,14 +644,14 @@ describe('Direct transport — connect', () => {
       response(request, LiquidReference.enableResponse, undefined, {
         code: 4004,
         message: 'wrong network',
-        data: { genesisHashes: ['mainnet-hash'] }
+        data: { genesisHashes: ['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=', 'not-a-hash', 42] }
       })
     )
     const error = await connecting.catch((e) => e)
     expect(error).toBeInstanceOf(DirectNetworkMismatchError)
     expect(error.code).toBe(4004)
     expect(error.genesisHash).toBe(GENESIS_HASH)
-    expect(error.walletGenesisHashes).toEqual(['mainnet-hash'])
+    expect(error.walletGenesisHashes).toEqual(['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=']) // invalid entries dropped
   })
 
   it('fails early with a network mismatch when ready advertises other networks only', async () => {
@@ -636,11 +659,16 @@ describe('Direct transport — connect', () => {
     const connecting = adapter.connect({ method: 'direct' })
     connecting.catch(() => undefined)
     fromWallet(
-      readyMessage({ capabilities: { methods: [], genesisHashes: ['some-other-genesis-hash'] } })
+      readyMessage({
+        capabilities: {
+          methods: [],
+          genesisHashes: ['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=']
+        }
+      })
     )
     const error = await connecting.catch((e) => e)
     expect(error).toBeInstanceOf(DirectNetworkMismatchError)
-    expect(error.walletGenesisHashes).toEqual(['some-other-genesis-hash'])
+    expect(error.walletGenesisHashes).toEqual(['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='])
     expect(popup().postMessage).not.toHaveBeenCalled()
   })
 
@@ -1033,6 +1061,26 @@ describe('Direct transport — signTransactions', () => {
     expect(error.code).toBe(4200)
   })
 
+  it('rejects with 4001 when the wallet returns null for a position it was asked to sign', async () => {
+    const { adapter } = await connectAdapter()
+    const own = makePayment(ADDR1, STRANGER)
+    const foreign = makePayment(STRANGER, ADDR1)
+    const { promise, request } = await readyAndRequest(() =>
+      adapter.signTransactions([own, foreign])
+    )
+    fromWallet(
+      response(request, LiquidReference.signTransactionsResponse, {
+        providerId: 'w',
+        stxns: [null, null]
+      })
+    )
+    const error = await promise.catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.code).toBe(4001)
+    expect(error.message).toMatch(/did not sign the transaction at position 0/)
+    expect(popup().close).toHaveBeenCalled()
+  })
+
   it('returns null for a position the wallet answered although it was not asked to sign it', async () => {
     const { adapter } = await connectAdapter()
     const own = makePayment(ADDR1, STRANGER)
@@ -1152,7 +1200,7 @@ describe('Direct transport — signData (ARC-0060)', () => {
     expect(request.params.items[0].domain).toBe('dapp.example')
     expect(request.params.items[0].scope).toBe(ScopeType.AUTH)
 
-    const signature = new Uint8Array(64).fill(3)
+    const signature = await signArc60(account1, request.params.items[0])
     fromWallet(
       response(request, LiquidReference.signDataResponse, {
         providerId: 'dapp-provider',
@@ -1160,6 +1208,35 @@ describe('Direct transport — signData (ARC-0060)', () => {
       })
     )
     expect((await signing).signature).toEqual(signature)
+  })
+
+  it('rejects a data signature that does not verify (tampered) or is by another key', async () => {
+    for (const tamper of ['flip', 'otherKey'] as const) {
+      win.popups.length = 0
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const signing = adapter.signData(data, metadata)
+      signing.catch(() => undefined)
+      fromWallet(readyMessage())
+      await requestPosted()
+      const request = sentRequest()
+      const signature = await signArc60(
+        tamper === 'otherKey' ? stranger : account1,
+        request.params.items[0]
+      )
+      if (tamper === 'flip') signature[5] ^= 1
+      fromWallet(
+        response(request, LiquidReference.signDataResponse, {
+          providerId: 'dapp-provider',
+          signatures: [toBase64Url(signature)]
+        })
+      )
+      const error = await signing.catch((e) => e)
+      expect(error).toBeInstanceOf(SignDataError)
+      expect(error.code).toBe(4200)
+      expect(error.message).toMatch(/invalid data signature/)
+      expect(popup().close).toHaveBeenCalled()
+    }
   })
 
   const failures: [string, unknown, number][] = [
@@ -1358,7 +1435,7 @@ describe('Direct transport — contract with the wallet implementation', () => {
     signing.catch(() => undefined)
     fromWallet(walletReady())
     await requestPosted()
-    const signature = new Uint8Array(64).fill(9)
+    const signature = await signArc60(account1, sentRequest().params.items[0])
     fromWallet(
       walletResponse(sentRequest(), 'arc0060:sign_data:response', {
         result: { providerId: WALLET_PROVIDER_ID, signatures: [toBase64Url(signature)] }

@@ -118,49 +118,19 @@ the session listed. Otherwise disconnect and connect again.
 Both peers are behind symmetric NATs and STUN alone cannot find a path — pass `iceServers`
 with a TURN server. The WebRTC connection state is visible via `adapter.isChannelOpen`.
 
-## Direct: `PopupBlockedError` / the popup never opens
+## Direct (popup) transport
 
-The browser refused `window.open`. It is only allowed synchronously inside a user gesture: call
-`wallet.connect({ method: 'direct' })` / `signTransactions()` / `signData()` directly from a click
-handler, with **no `await` (or `setTimeout`, or promise `.then`) before it**. In frameworks, don't
-route the click through an async function that awaits something first. Also check the browser's
-popup-blocker setting for your site (the address bar shows a "popup blocked" icon); the built-in
-dialog keeps its _Open Biatec Wallet_ button so the user can allow popups and click again.
-
-## Direct: `Biatec Wallet window was closed before the request completed` (code 4001)
-
-Either the user closed the popup, or the channel was severed on open. If the popup visibly
-loaded and you did not close it, your dApp page probably sends
-`Cross-Origin-Opener-Policy: same-origin` (or opens the wallet with `noopener`/`noreferrer`),
-which cuts `window.opener` — use `same-origin-allow-popups` or no COOP header.
-
-## Direct: `Biatec Wallet did not respond — popup blocked or wallet origin unreachable` (code 4002)
-
-The popup opened but never posted its `ready` message to this page within `connectTimeoutMs`.
-Common causes: the wallet origin is unreachable/offline, a custom `direct.walletUrl` doesn't match
-what the wallet expects, the wallet is waiting for the user to unlock it (raise
-`connectTimeoutMs`), or an extension/blocker is interfering. Messages from any origin other than
-the pinned wallet origin (or from any window other than the popup) are ignored on purpose.
-
-## Direct: error `4100` — "site not connected in Biatec Wallet"
-
-The wallet has no session for this site's origin (the user removed it in the wallet, cleared its
-data, or connected from a different origin such as `localhost` vs `127.0.0.1`), or the account
-used is not one the user approved for the site. Call `connect({ method: 'direct' })` again.
-
-## Direct: `DirectNetworkMismatchError` (code 4004)
-
-The wallet is on a different network than the dApp's active network (compared by genesis hash).
-Switch the network in the wallet, or call `setActiveNetwork()` to match; the error carries
-`genesisHash` (requested) and `walletGenesisHashes` (when the wallet reports them).
-
-## Direct: `Biatec Wallet returned a signed transaction … that does not match the transaction that was sent` (code 4200)
-
-The adapter re-checks that each signed transaction the wallet returns has the same transaction id
-as the one it sent, and rejects anything else (a compromised or buggy wallet page, or a
-man-in-the-middle script, could otherwise swap the transaction). Nothing is returned to your code.
-Treat it as a security event: verify the wallet origin (`adapter.directWalletOrigin`) and that you
-are not overriding `direct.walletUrl` in production.
+| Symptom                                                                                                  | Likely cause                                                                                                                                                                                                | Fix                                                                                                                                                                                                                                                                             |
+| -------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `PopupBlockedError` / the popup never opens                                                              | `window.open` was not called synchronously inside a user gesture (an `await`, `setTimeout` or `.then` ran first), or popups are blocked for the site                                                        | Call `connect({ method: 'direct' })` / `signTransactions()` / `signData()` straight from the click handler; fetch suggested params before the click; check the browser's popup-blocker icon. Catch `PopupBlockedError` and let the user click again (the built-in dialog does). |
+| `Biatec Wallet window was closed before the request completed` (4001)                                    | The user closed the popup, or the channel was severed: the dApp sends `Cross-Origin-Opener-Policy: same-origin`, or `direct.popupFeatures` contains `noopener`/`noreferrer`                                 | Use `same-origin-allow-popups` or no COOP header; never pass `noopener`. Let the user click again.                                                                                                                                                                              |
+| `Biatec Wallet did not respond — popup blocked or wallet origin unreachable` (4002)                      | The popup never posted `ready` within `connectTimeoutMs`: wallet origin offline, a custom `direct.walletUrl` the wallet does not match, the user still unlocking, an extension interfering                  | Check the wallet URL; raise `connectTimeoutMs` if users need longer to unlock. Messages from any other origin/window are ignored on purpose.                                                                                                                                    |
+| `Another Biatec Wallet request is already in progress on this page` (4200)                               | A second `connect`/`sign*` was started (from any adapter instance on the page) while a Direct popup is still open; only one request may be in flight per page                                               | Disable the button while a request is pending, or wait for the first call to settle (close the popup to cancel it).                                                                                                                                                             |
+| Error `4100` — "site not connected in Biatec Wallet"                                                     | The wallet has no grant for this origin (removed in the wallet's Connect → Direct tab, data cleared, or a different origin such as `localhost` vs `127.0.0.1`), or the account is not approved for the site | Call `connect({ method: 'direct' })` again.                                                                                                                                                                                                                                     |
+| `DirectNetworkMismatchError` (4004)                                                                      | The wallet is on a different network than the dApp's active one (genesis hash compared by bytes)                                                                                                            | Switch network in the wallet or `setActiveNetwork()`; the error carries `genesisHash` (requested) and `walletGenesisHashes` (when reported).                                                                                                                                    |
+| `… does not match the transaction that was sent` / `invalid signature` / `invalid data signature` (4200) | The wallet returned a signed transaction with another txID, a signature that does not verify, or an ARC-0060 signature that does not verify — a compromised/buggy wallet page or a script in between        | Nothing is returned to your code. Treat as a security event: check `adapter.directWalletOrigin` and that `direct.walletUrl` is not overridden in production.                                                                                                                    |
+| `Biatec Wallet did not sign the transaction at position N` (4001)                                        | The wallet returned `null` for a transaction the dApp asked to sign                                                                                                                                         | The user declined (part of) the group; retry the whole request.                                                                                                                                                                                                                 |
+| `signData()` rejects with `SignDataError` for a Direct failure                                           | Expected: Direct errors are wrapped into ARC-0060 codes — except `PopupBlockedError`, which is rethrown unchanged                                                                                           | Branch on `error instanceof PopupBlockedError` first, then on `SignDataError.code`.                                                                                                                                                                                             |
 
 ## Still stuck?
 

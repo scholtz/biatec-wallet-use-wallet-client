@@ -552,3 +552,56 @@ describe('BiatecWalletAdapter — losing transports are aborted', () => {
     expect(adapter.accounts[0].metadata).toMatchObject({ method: 'direct' })
   })
 })
+
+describe('BiatecWalletAdapter — picker-only mode reports a failed explicit Direct pick at once', () => {
+  it('rejects connect() immediately when the user picked Direct and its popup was blocked', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://dapp.example' },
+      open: () => null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    })
+    let dialogOptions!: Parameters<typeof connectDialog.openConnectDialog>[0]
+    const close = vi.fn()
+    vi.mocked(connectDialog.openConnectDialog).mockImplementation((options) => {
+      dialogOptions = options
+      return { close, setState: vi.fn() }
+    })
+    // WalletConnect pairing that never completes (as in real life until the QR is scanned).
+    mocks.signClient.connect.mockResolvedValue({
+      uri: 'wc:uri',
+      approval: () => new Promise(() => undefined)
+    })
+    const { adapter } = createAdapter() // onDisplayUri set => picker-only dialog
+    const connecting = adapter.connect()
+    expect(dialogOptions.showContent).toBe(false)
+    dialogOptions.onSelectMethod('direct')
+    await expect(connecting).rejects.toBeInstanceOf(PopupBlockedError)
+    expect(close).toHaveBeenCalled()
+  })
+
+  it('passes a localized error kind (not the raw message) to the content dialog', async () => {
+    vi.stubGlobal('window', {
+      location: { origin: 'https://dapp.example' },
+      open: () => null,
+      addEventListener: () => undefined,
+      removeEventListener: () => undefined
+    })
+    let dialogOptions!: Parameters<typeof connectDialog.openConnectDialog>[0]
+    const setState = vi.fn()
+    vi.mocked(connectDialog.openConnectDialog).mockImplementation((options) => {
+      dialogOptions = options
+      return { close: vi.fn(), setState }
+    })
+    mocks.signClient.connect.mockReturnValue(new Promise(() => undefined))
+    const { adapter } = createAdapter({}, undefined, { withOnDisplayUri: false })
+    void adapter.connect().catch(() => undefined)
+    dialogOptions.onSelectMethod('direct')
+    await vi.waitFor(() =>
+      expect(setState).toHaveBeenCalledWith(
+        'direct',
+        expect.objectContaining({ status: 'popup-blocked', errorKind: 'popupBlocked' })
+      )
+    )
+  })
+})

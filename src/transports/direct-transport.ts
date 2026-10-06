@@ -57,6 +57,7 @@ import {
   invalid,
   isRecord,
   parseEnableResult,
+  sanitizeErrorData,
   parseReady,
   parseResponseEnvelope,
   parseSignDataResult,
@@ -215,6 +216,20 @@ export function resolveWalletUrl(walletUrl: string): { origin: string; base: str
     throw new Error('direct.walletUrl must not contain credentials')
   }
   return { origin: url.origin, base: url.origin + url.pathname.replace(/\/+$/, '') }
+}
+
+// ---------- ARC-0060 digest -------------------------------------------------- //
+
+/** `sha256(data) || sha256(authenticatorData)` — what Biatec Wallet signs for ARC-0060. */
+async function arc60Digest(dataBase64: string, authenticatorData: Uint8Array): Promise<Uint8Array> {
+  const data = algosdk.base64ToBytes(dataBase64)
+  const sha256 = async (bytes: Uint8Array) =>
+    new Uint8Array(await crypto.subtle.digest('SHA-256', bytes as BufferSource))
+  const [dataHash, authHash] = await Promise.all([sha256(data), sha256(authenticatorData)])
+  const digest = new Uint8Array(dataHash.length + authHash.length)
+  digest.set(dataHash, 0)
+  digest.set(authHash, dataHash.length)
+  return digest
 }
 
 // ---------- One popup, one request ---------------------------------------- //
@@ -593,7 +608,7 @@ export class DirectTransport {
         throw new LiquidProviderError(
           'Biatec Wallet is not on the requested network',
           LiquidErrorCode.networkNotSupported,
-          { genesisHashes: capabilities.genesisHashes }
+          sanitizeErrorData({ genesisHashes: capabilities.genesisHashes })
         )
       }
     }
@@ -603,12 +618,8 @@ export class DirectTransport {
   private translate(error: unknown, genesisHash: string): Error {
     if (error instanceof LiquidProviderError) {
       if (error.code === LiquidErrorCode.networkNotSupported) {
-        const data = isRecord(error.data) ? error.data : {}
-        const hashes = Array.isArray(data.genesisHashes)
-          ? data.genesisHashes.filter((h): h is string => typeof h === 'string')
-          : typeof data.genesisHash === 'string'
-            ? [data.genesisHash]
-            : []
+        // Only valid, bounded hashes ever reach callers (see sanitizeErrorData).
+        const hashes = sanitizeErrorData(error.data)?.genesisHashes ?? []
         return new DirectNetworkMismatchError(
           `Biatec Wallet is on a different network (requested genesis hash ${genesisHash}). Switch network in the wallet or in your dApp.`,
           genesisHash,
@@ -748,10 +759,18 @@ export class DirectTransport {
       for (let index = 0; index < txnsToSign.length; index++) {
         const entry = txnsToSign[index]
         const value = stxns[index]
-        if ((entry.signers && entry.signers.length === 0) || value === null) {
+        if (entry.signers && entry.signers.length === 0) {
           results.push(null)
           this.applyRekey(state, decoded[index].txn)
           continue
+        }
+        if (value === null) {
+          // A hole where we asked for a signature would surface later as a confusing algod
+          // group error; it is a rejection of this request.
+          throw new LiquidProviderError(
+            `Biatec Wallet did not sign the transaction at position ${index}`,
+            LiquidErrorCode.cancelled
+          )
         }
         results.push(
           await this.verifySigned(
@@ -926,9 +945,17 @@ export class DirectTransport {
         'signatures[0]',
         LIMITS.MAX_SIGNATURE_CHARS
       )
-      // ARC-0060 signatures are ed25519: exactly 64 bytes. (Not cryptographically verified here:
-      // the signed digest is wallet-specific; only the length can be checked locally.)
+      // ARC-0060 (Biatec Wallet): ed25519 over sha256(data) || sha256(authenticatorData), by the
+      // item's signer key. Deterministic, so it is verified locally before being returned.
       if (signatureBytes.length !== 64) throw invalid('signatures[0] must be exactly 64 bytes')
+      const digest = await arc60Digest(stdSignData.data, stdSignData.authenticatorData)
+      const signerAddress = algosdk.encodeAddress(stdSignData.signer)
+      if (!this.verifyEd25519(digest, signatureBytes, signerAddress)) {
+        throw new LiquidProviderError(
+          'Biatec Wallet returned an invalid data signature',
+          LiquidErrorCode.invalidInput
+        )
+      }
       return { ...stdSignData, signature: signatureBytes }
     } catch (error) {
       session?.abort(toError(error))
