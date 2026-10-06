@@ -16,13 +16,14 @@ export function ConnectWallet() {
   const [connecting, setConnecting] = createSignal<string | null>(null)
   const [error, setError] = createSignal<string | null>(null)
 
-  const handleConnect = async (walletId: string) => {
+  const handleConnect = async (walletId: string, method?: 'direct') => {
     const wallet = wallets().find((w) => w.id === walletId)
     if (!wallet) return
     setError(null)
     setConnecting(walletId)
     try {
-      await wallet.connect()
+      // Called synchronously from the click, so the Direct popup is not blocked by the browser.
+      await wallet.connect(method ? { method } : undefined)
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e))
     } finally {
@@ -75,13 +76,22 @@ export function ConnectWallet() {
               <Show
                 when={wallet.isConnected}
                 fallback={
-                  <button
-                    style={pillButton}
-                    onClick={() => handleConnect(wallet.id)}
-                    disabled={connecting() === wallet.id}
-                  >
-                    {connecting() === wallet.id ? 'Connecting…' : 'Connect'}
-                  </button>
+                  <>
+                    <button
+                      style={pillButton}
+                      onClick={() => handleConnect(wallet.id)}
+                      disabled={connecting() === wallet.id}
+                    >
+                      {connecting() === wallet.id ? 'Connecting…' : 'Connect'}
+                    </button>
+                    <button
+                      style={ghostButton}
+                      onClick={() => handleConnect(wallet.id, 'direct')}
+                      disabled={connecting() === wallet.id}
+                    >
+                      Connect (popup)
+                    </button>
+                  </>
                 }
               >
                 <Show when={wallet.accounts.length > 1}>

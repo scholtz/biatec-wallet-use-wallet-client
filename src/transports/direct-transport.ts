@@ -1,0 +1,793 @@
+/**
+ * Biatec Direct transport: a relay-free, same-browser connection where the dApp opens Biatec
+ * Wallet in a popup and exchanges ARC-0027 messages with it over `window.postMessage`.
+ *
+ * Security model (see docs/DIRECT_PROTOCOL.md, which is normative):
+ *  - the wallet origin is pinned (`BIATEC_WALLET_URL`, or an explicit, warned-about
+ *    `direct.walletUrl` override that must be https or localhost);
+ *  - every inbound message must satisfy `event.origin === WALLET_ORIGIN && event.source ===
+ *    popup`, and every outbound message uses `WALLET_ORIGIN` as its explicit targetOrigin
+ *    (never `"*"`);
+ *  - one request per popup, each with a fresh uuid; everything the wallet returns is validated
+ *    field by field, returned accounts must be valid addresses and returned signed
+ *    transactions must be the transactions that were sent;
+ *  - the popup is opened synchronously (before any `await`) so browsers count it as user-gesture
+ *    initiated; a `null` handle becomes {@link PopupBlockedError};
+ *  - the popup's `closed` flag is polled so closing it rejects instead of hanging, and every
+ *    wait is bounded by a timeout.
+ */
+import algosdk from 'algosdk'
+import {
+  SignDataError,
+  flattenTxnGroup,
+  isSignedTxn,
+  isTransactionArray,
+  type StdSignDataResponse,
+  type StdSignMetadata,
+  type WalletAccount,
+  type WalletState
+} from '@txnlab/use-wallet/adapter'
+import {
+  BIATEC_WALLET_URL,
+  DIRECT_POPUP_HEIGHT,
+  DIRECT_POPUP_WIDTH,
+  DIRECT_ROUTE,
+  DIRECT_WINDOW_NAME
+} from '../adapter-constants'
+import { DirectNetworkMismatchError, PopupBlockedError, SessionError } from '../errors'
+import {
+  LiquidErrorCode,
+  LiquidProviderError,
+  LiquidReference,
+  buildRequest,
+  toBase64Url,
+  type EnableParams,
+  type EnableResult,
+  type LiquidPeerMetadata,
+  type LiquidRequestMessage,
+  type LiquidStdSigData,
+  type LiquidWalletTransaction,
+  type SignDataParams,
+  type SignTransactionsParams
+} from '../liquid/protocol'
+import { getWindowMetadata } from '../window-metadata'
+import {
+  LIMITS,
+  decodeBase64Field,
+  invalid,
+  isRecord,
+  parseEnableResult,
+  parseReady,
+  parseResponseEnvelope,
+  parseSignDataResult,
+  parseSignTransactionsResult,
+  type DirectReady
+} from './direct-validation'
+import { ConnectAbortedError, type BiatecAccountMetadata, type TransportContext } from './types'
+
+export interface DirectTransportOptions {
+  /**
+   * Wallet base URL. **Development only** — defaults to `https://wallet.biatec.io`. Must be
+   * `https:`, or `http:` on `localhost` / `127.0.0.1`. Overriding it logs a one-time
+   * `console.warn`, because whoever controls this origin controls what you sign.
+   */
+  walletUrl?: string
+  /**
+   * `window.open` feature string. Defaults to a centered 480x720 popup. Must not contain
+   * `noopener` / `noreferrer` (they sever the channel to the wallet).
+   */
+  popupFeatures?: string
+  /** dApp metadata announced to the wallet in `enable`. Defaults are read from the page. */
+  metadata?: Partial<LiquidPeerMetadata>
+  /** ARC-0027 provider id carried in every message. Default: a random UUID per adapter instance. */
+  providerId?: string
+  /** Expose ARC-0060 `signData()`. Default `true`. */
+  enableSignData?: boolean
+  /**
+   * How long to wait for the wallet popup to become ready and for the user to approve a
+   * connection (the user may be unlocking the wallet first). Default 5 minutes.
+   */
+  connectTimeoutMs?: number
+  /** How long a signing request waits for the user's answer in the wallet. Default 5 minutes. */
+  requestTimeoutMs?: number
+}
+
+export interface DirectConnectHandlers {
+  /** Closes the popup and rejects promptly if aborted (cancelled dialog, another method won). */
+  signal?: AbortSignal
+}
+
+const DEFAULT_CONNECT_TIMEOUT_MS = 5 * 60 * 1000
+const DEFAULT_REQUEST_TIMEOUT_MS = 5 * 60 * 1000
+/** How often `popup.closed` is polled. */
+export const POPUP_POLL_INTERVAL_MS = 500
+
+/** The slice of `WindowProxy` this transport uses (and tests fake). */
+interface PopupHandle {
+  closed: boolean
+  postMessage(message: unknown, targetOrigin: string): void
+  close(): void
+  focus?: () => void
+}
+
+interface MessageLike {
+  origin: string
+  source: unknown
+  data: unknown
+}
+
+interface HostWindow {
+  open(url: string, name: string, features: string): PopupHandle | null
+  addEventListener(type: 'message', listener: (event: MessageEvent) => void): void
+  removeEventListener(type: 'message', listener: (event: MessageEvent) => void): void
+  location: { origin: string }
+  screenX?: number
+  screenY?: number
+  outerWidth?: number
+  outerHeight?: number
+}
+
+interface Deferred<T> {
+  promise: Promise<T>
+  resolve(value: T): void
+  reject(error: Error): void
+}
+
+function deferred<T>(): Deferred<T> {
+  let resolve!: (value: T) => void
+  let reject!: (error: Error) => void
+  const promise = new Promise<T>((res, rej) => {
+    resolve = res
+    reject = rej
+  })
+  // Rejections are always consumed by whoever awaits; never surface as "unhandled".
+  promise.catch(() => undefined)
+  return { promise, resolve, reject }
+}
+
+function toError(error: unknown): Error {
+  return error instanceof Error ? error : new Error(String(error))
+}
+
+function getHostWindow(): HostWindow {
+  const host = (globalThis as { window?: unknown }).window
+  if (!host || typeof (host as HostWindow).open !== 'function') {
+    throw new SessionError('The Biatec Direct connection method needs a browser window')
+  }
+  return host as HostWindow
+}
+
+/**
+ * Validates and normalizes the wallet URL. Returns the pinned origin and the base the popup
+ * route is appended to.
+ */
+export function resolveWalletUrl(walletUrl: string): { origin: string; base: string } {
+  let url: URL
+  try {
+    url = new URL(walletUrl)
+  } catch {
+    throw new Error(`Invalid direct.walletUrl: ${walletUrl}`)
+  }
+  const local = url.hostname === 'localhost' || url.hostname === '127.0.0.1'
+  if (url.protocol !== 'https:' && !(url.protocol === 'http:' && local)) {
+    throw new Error('direct.walletUrl must use https:, or http: only on localhost / 127.0.0.1')
+  }
+  if (url.username || url.password) {
+    throw new Error('direct.walletUrl must not contain credentials')
+  }
+  return { origin: url.origin, base: url.origin + url.pathname.replace(/\/+$/, '') }
+}
+
+// ---------- One popup, one request ---------------------------------------- //
+
+interface Exchange {
+  requestId: string
+  responseReference: string
+  validate: (result: unknown) => unknown
+}
+
+class PopupSession {
+  settled = false
+  readonly ready = deferred<DirectReady>()
+  private readonly response = deferred<unknown>()
+  private exchange: Exchange | null = null
+  private isReady = false
+  private readyTimer: ReturnType<typeof setTimeout> | undefined
+  private responseTimer: ReturnType<typeof setTimeout> | undefined
+  private poll: ReturnType<typeof setInterval> | undefined
+  private closedSeen = false
+  private abortCleanup: (() => void) | undefined
+
+  constructor(
+    private readonly host: HostWindow,
+    readonly popup: PopupHandle,
+    private readonly walletOrigin: string,
+    private readonly connectTimeoutMs: number,
+    private readonly onSettled: (session: PopupSession) => void,
+    private readonly debug: (message: string, ...args: unknown[]) => void,
+    signal: AbortSignal | undefined
+  ) {
+    host.addEventListener('message', this.onMessage)
+    this.readyTimer = setTimeout(
+      () =>
+        this.fail(
+          new LiquidProviderError(
+            'Biatec Wallet did not respond — popup blocked or wallet origin unreachable',
+            LiquidErrorCode.timedOut
+          )
+        ),
+      connectTimeoutMs
+    )
+    // A wallet that was COOP-severed or closed by the user flips `closed`; the wallet closing
+    // itself right after answering is covered by the one-tick grace in `pollClosed`.
+    this.poll = setInterval(() => this.pollClosed(), POPUP_POLL_INTERVAL_MS)
+    if (signal) {
+      const onAbort = () => this.fail(new ConnectAbortedError())
+      if (signal.aborted) queueMicrotask(onAbort)
+      else {
+        signal.addEventListener('abort', onAbort, { once: true })
+        this.abortCleanup = () => signal.removeEventListener('abort', onAbort)
+      }
+    }
+  }
+
+  private pollClosed(): void {
+    if (this.settled) return
+    let closed: boolean
+    try {
+      closed = this.popup.closed
+    } catch {
+      closed = true
+    }
+    if (!closed) {
+      this.closedSeen = false
+      return
+    }
+    // Give a message that was posted just before the window closed itself one more tick to be
+    // delivered before treating the close as a user cancellation.
+    if (!this.closedSeen) {
+      this.closedSeen = true
+      return
+    }
+    this.fail(
+      new LiquidProviderError(
+        'Biatec Wallet window was closed before the request completed. If you did not close it, ' +
+          'check that your page does not send Cross-Origin-Opener-Policy: same-origin.',
+        LiquidErrorCode.cancelled
+      )
+    )
+  }
+
+  /** Whether `event` comes from the wallet popup. Order matters: cheapest, strictest first. */
+  private isTrusted(event: MessageLike): boolean {
+    return event.origin === this.walletOrigin && event.source === this.popup
+  }
+
+  private readonly onMessage = (event: MessageEvent): void => {
+    if (this.settled) return
+    try {
+      const message = event as unknown as MessageLike
+      if (!this.isTrusted(message)) {
+        this.debug('Ignoring message from untrusted origin/source', message.origin)
+        return
+      }
+      this.handleTrusted(message.data)
+    } catch (error) {
+      // Never throw out of a window event listener.
+      this.fail(toError(error))
+    }
+  }
+
+  private handleTrusted(data: unknown): void {
+    if (!this.isReady) {
+      const capabilities = parseReady(data)
+      this.isReady = true
+      clearTimeout(this.readyTimer)
+      this.readyTimer = undefined
+      this.ready.resolve(capabilities)
+      return
+    }
+    // After the handshake only a response to *our* request matters. Anything else (a repeated
+    // ready, a stray message, a response to another id) is ignored, never trusted.
+    const exchange = this.exchange
+    if (!exchange || !isRecord(data) || data.requestId !== exchange.requestId) {
+      this.debug('Ignoring message that is not a response to the pending request')
+      return
+    }
+    const parsed = parseResponseEnvelope(data, exchange.responseReference)
+    if (parsed.error) {
+      throw new LiquidProviderError(
+        parsed.error.message || 'Biatec Wallet rejected the request',
+        parsed.error.code,
+        parsed.error.data
+      )
+    }
+    const validated = exchange.validate(parsed.result)
+    this.succeed(validated)
+  }
+
+  /**
+   * Waits for the wallet's `ready`, sends exactly one request and resolves with the validated
+   * result. `onReady` can veto based on the wallet's advertised capabilities.
+   */
+  async run<P, R>(
+    request: LiquidRequestMessage<P>,
+    responseReference: string,
+    validate: (result: unknown) => R,
+    responseTimeoutMs: number,
+    onReady?: (capabilities: DirectReady) => void
+  ): Promise<R> {
+    const capabilities = await this.ready.promise
+    if (this.settled)
+      throw new LiquidProviderError('Request was cancelled', LiquidErrorCode.cancelled)
+    onReady?.(capabilities)
+    this.exchange = { requestId: request.id, responseReference, validate }
+    this.responseTimer = setTimeout(
+      () =>
+        this.fail(
+          new LiquidProviderError(
+            `Wallet did not answer ${request.reference}`,
+            LiquidErrorCode.timedOut
+          )
+        ),
+      responseTimeoutMs
+    )
+    try {
+      // Explicit targetOrigin, never "*": the payload only ever reaches the pinned wallet origin.
+      this.popup.postMessage(request, this.walletOrigin)
+    } catch (error) {
+      throw new LiquidProviderError(
+        `Failed to post the request to Biatec Wallet: ${toError(error).message}`,
+        LiquidErrorCode.failedToPost
+      )
+    }
+    return (await this.response.promise) as R
+  }
+
+  private teardown(): void {
+    this.settled = true
+    clearTimeout(this.readyTimer)
+    clearTimeout(this.responseTimer)
+    clearInterval(this.poll)
+    this.abortCleanup?.()
+    this.host.removeEventListener('message', this.onMessage)
+    this.onSettled(this)
+  }
+
+  private succeed(result: unknown): void {
+    if (this.settled) return
+    this.teardown()
+    this.response.resolve(result)
+  }
+
+  /** Rejects everything pending, stops all timers/listeners and closes the popup. Idempotent. */
+  fail(error: Error): void {
+    if (this.settled) return
+    this.teardown()
+    try {
+      if (!this.popup.closed) this.popup.close()
+    } catch {
+      /* ignore */
+    }
+    this.ready.reject(error)
+    this.response.reject(error)
+  }
+}
+
+// ---------- The transport ------------------------------------------------- //
+
+export class DirectTransport {
+  private session: PopupSession | null = null
+
+  private readonly walletOrigin: string
+  private readonly walletBase: string
+  private readonly popupFeatures: string | undefined
+  private readonly dappMetadata: LiquidPeerMetadata
+  private readonly providerId: string
+  private readonly enableSignData: boolean
+  private readonly connectTimeoutMs: number
+  private readonly requestTimeoutMs: number
+
+  constructor(
+    private readonly ctx: TransportContext,
+    options: DirectTransportOptions
+  ) {
+    const resolved = resolveWalletUrl(options.walletUrl ?? BIATEC_WALLET_URL)
+    this.walletOrigin = resolved.origin
+    this.walletBase = resolved.base
+    if (resolved.origin !== new URL(BIATEC_WALLET_URL).origin) {
+      console.warn(
+        `[biatec-wallet-use-wallet-client] Biatec Direct is using a non-default wallet origin ` +
+          `(${resolved.origin}). Only do this for local wallet development: the origin you ` +
+          `configure decides what you sign.`
+      )
+    }
+    if (options.popupFeatures !== undefined) {
+      if (/no(opener|referrer)/i.test(options.popupFeatures)) {
+        throw new Error(
+          'direct.popupFeatures must not contain noopener/noreferrer: they sever the channel to the wallet'
+        )
+      }
+      this.popupFeatures = options.popupFeatures
+    }
+    const base = getWindowMetadata()
+    this.dappMetadata = {
+      name: options.metadata?.name ?? base.name ?? '',
+      description: options.metadata?.description ?? base.description ?? '',
+      url: options.metadata?.url ?? base.url ?? '',
+      icons: [...(options.metadata?.icons ?? base.icons ?? [])]
+    }
+    this.providerId = options.providerId ?? crypto.randomUUID()
+    this.enableSignData = options.enableSignData ?? true
+    this.connectTimeoutMs = options.connectTimeoutMs ?? DEFAULT_CONNECT_TIMEOUT_MS
+    this.requestTimeoutMs = options.requestTimeoutMs ?? DEFAULT_REQUEST_TIMEOUT_MS
+  }
+
+  /** The pinned origin of the wallet this transport talks to. */
+  public get origin(): string {
+    return this.walletOrigin
+  }
+
+  /** Whether a popup request is currently in flight. */
+  public get isBusy(): boolean {
+    return this.session !== null
+  }
+
+  // ---------- Popup handling ---------------------------------------------- //
+
+  private features(host: HostWindow): string {
+    if (this.popupFeatures !== undefined) return this.popupFeatures
+    const num = (value: number | undefined, fallback: number) =>
+      typeof value === 'number' && Number.isFinite(value) ? value : fallback
+    const left = Math.max(
+      0,
+      Math.round(
+        num(host.screenX, 0) + (num(host.outerWidth, DIRECT_POPUP_WIDTH) - DIRECT_POPUP_WIDTH) / 2
+      )
+    )
+    const top = Math.max(
+      0,
+      Math.round(
+        num(host.screenY, 0) +
+          (num(host.outerHeight, DIRECT_POPUP_HEIGHT) - DIRECT_POPUP_HEIGHT) / 2
+      )
+    )
+    return `popup,width=${DIRECT_POPUP_WIDTH},height=${DIRECT_POPUP_HEIGHT},left=${left},top=${top}`
+  }
+
+  /**
+   * Opens the popup and starts a session. **Synchronous on purpose**: it must be reachable from
+   * the user's click handler without crossing an `await`, or browsers block the popup.
+   */
+  private beginSession(connectTimeoutMs: number, signal?: AbortSignal): PopupSession {
+    const host = getHostWindow()
+    if (this.session) {
+      throw new LiquidProviderError(
+        'Another Biatec Wallet request is already in progress',
+        LiquidErrorCode.invalidInput
+      )
+    }
+    const dappOrigin = host.location.origin
+    if (!dappOrigin || dappOrigin === 'null') {
+      throw new SessionError(
+        'Biatec Direct needs a page with a real origin (http(s)); this page has an opaque origin'
+      )
+    }
+    const url = `${this.walletBase}${DIRECT_ROUTE}?origin=${encodeURIComponent(dappOrigin)}`
+    const popup = host.open(url, DIRECT_WINDOW_NAME, this.features(host))
+    if (!popup) throw new PopupBlockedError()
+    const session = new PopupSession(
+      host,
+      popup,
+      this.walletOrigin,
+      connectTimeoutMs,
+      (settled) => {
+        if (this.session === settled) this.session = null
+      },
+      (message, ...args) => this.ctx.logger.debug(message, ...args),
+      signal
+    )
+    this.session = session
+    return session
+  }
+
+  /** Brings the popup of an in-flight request to the front (e.g. the dialog's button). */
+  public focusPopup = (): void => {
+    try {
+      this.session?.popup.focus?.()
+    } catch {
+      /* ignore */
+    }
+  }
+
+  /** Cancels the in-flight request, if any, closing its popup. */
+  public cancelPending = (): void => {
+    this.session?.fail(new ConnectAbortedError())
+  }
+
+  private genesisHash(): string {
+    const genesisHash = this.ctx.getActiveNetworkConfig().genesisHash
+    if (!genesisHash) {
+      throw new SessionError('The active network has no genesisHash; Biatec Direct needs one')
+    }
+    return genesisHash
+  }
+
+  /** Early network check against what the wallet advertised in `ready`. */
+  private checkNetwork(genesisHash: string): (capabilities: DirectReady) => void {
+    return (capabilities) => {
+      if (
+        capabilities.genesisHashes.length > 0 &&
+        !capabilities.genesisHashes.includes(genesisHash)
+      ) {
+        throw new LiquidProviderError(
+          'Biatec Wallet is not on the requested network',
+          LiquidErrorCode.networkNotSupported,
+          { genesisHashes: capabilities.genesisHashes }
+        )
+      }
+    }
+  }
+
+  /** Turns wallet error codes into the errors consumers are told to expect. */
+  private translate(error: unknown, genesisHash: string): Error {
+    if (error instanceof LiquidProviderError) {
+      if (error.code === LiquidErrorCode.networkNotSupported) {
+        const data = isRecord(error.data) ? error.data : {}
+        const hashes = Array.isArray(data.genesisHashes)
+          ? data.genesisHashes.filter((h): h is string => typeof h === 'string')
+          : typeof data.genesisHash === 'string'
+            ? [data.genesisHash]
+            : []
+        return new DirectNetworkMismatchError(
+          `Biatec Wallet is on a different network (requested genesis hash ${genesisHash}). Switch network in the wallet or in your dApp.`,
+          genesisHash,
+          hashes
+        )
+      }
+      if (error.code === LiquidErrorCode.unauthorizedSigner) {
+        return new LiquidProviderError(
+          `${error.message} — this site is not connected in Biatec Wallet (or the account is not approved for it); reconnect.`,
+          error.code,
+          error.data
+        )
+      }
+    }
+    return toError(error)
+  }
+
+  // ---------- Session lifecycle ------------------------------------------- //
+
+  public connect = async (handlers: DirectConnectHandlers = {}): Promise<WalletAccount[]> => {
+    this.ctx.logger.info('Connecting via Biatec Direct...')
+    if (handlers.signal?.aborted) throw new ConnectAbortedError()
+    const genesisHash = this.genesisHash()
+    // No `await` may precede this call: it opens the popup from the user's gesture.
+    const session = this.beginSession(this.connectTimeoutMs, handlers.signal)
+    try {
+      const params: EnableParams = {
+        providerId: this.providerId,
+        genesisHash,
+        metadata: this.dappMetadata
+      }
+      const result: EnableResult = await session.run(
+        buildRequest(LiquidReference.enableRequest, params),
+        LiquidReference.enableResponse,
+        (raw) => parseEnableResult(raw, this.providerId, genesisHash),
+        this.connectTimeoutMs,
+        this.checkNetwork(genesisHash)
+      )
+      const accounts = this.storeAccounts(result, genesisHash)
+      this.ctx.logger.info('Connected via Biatec Direct', { origin: this.walletOrigin })
+      return accounts
+    } catch (error) {
+      session.fail(toError(error))
+      this.ctx.logger.error('Error connecting:', toError(error).message)
+      throw this.translate(error, genesisHash)
+    }
+  }
+
+  public disconnect = async (): Promise<void> => {
+    this.ctx.logger.info('Disconnecting...')
+    // v1 does not open a popup just to say goodbye: the wallet keeps the site's session until
+    // the user removes it there. We only stop everything on our side.
+    this.session?.fail(new LiquidProviderError('Session closed', LiquidErrorCode.cancelled))
+  }
+
+  /** Returns `false` (after disconnecting) when the persisted session cannot be trusted. */
+  public resume = async (
+    metadata: Partial<BiatecAccountMetadata> | undefined
+  ): Promise<boolean> => {
+    const persistedOrigin =
+      metadata && metadata.method === 'direct' ? metadata.walletOrigin : undefined
+    if (persistedOrigin !== this.walletOrigin) {
+      this.ctx.logger.warn(
+        'Persisted Biatec Direct session belongs to a different wallet origin; disconnecting',
+        persistedOrigin
+      )
+      this.ctx.onDisconnect()
+      return false
+    }
+    // Nothing to re-pair: a popup is opened per request.
+    this.ctx.logger.info('Biatec Direct session restored')
+    return true
+  }
+
+  // ---------- Transaction signing (ARC-0001 over ARC-0027) ---------------- //
+
+  public signTransactions = async <T extends algosdk.Transaction[] | Uint8Array[]>(
+    txnGroup: T | T[],
+    indexesToSign?: number[]
+  ): Promise<(Uint8Array | null)[]> => {
+    const genesisHash = this.genesisHash()
+    const decoded = isTransactionArray(txnGroup)
+      ? flattenTxnGroup(txnGroup).map((txn) => ({ txn, isSigned: false }))
+      : flattenTxnGroup(txnGroup as Uint8Array[]).map((bytes) => {
+          const isSigned = isSignedTxn(algosdk.msgpackRawDecode(bytes))
+          const txn = isSigned
+            ? algosdk.decodeSignedTransaction(bytes).txn
+            : algosdk.decodeUnsignedTransaction(bytes)
+          return { txn, isSigned }
+        })
+
+    const txnsToSign: LiquidWalletTransaction[] = decoded.map(({ txn, isSigned }, index) => {
+      const isIndexMatch = !indexesToSign || indexesToSign.includes(index)
+      const canSign = !isSigned && this.ctx.getAddresses().includes(txn.sender.toString())
+      const entry: LiquidWalletTransaction = { txn: toBase64Url(txn.toByte()) }
+      if (!(isIndexMatch && canSign)) entry.signers = []
+      return entry
+    })
+
+    if (txnsToSign.every((entry) => entry.signers?.length === 0)) {
+      return txnsToSign.map(() => null)
+    }
+
+    // No `await` may precede this call: it opens the popup from the user's gesture.
+    const session = this.beginSession(this.connectTimeoutMs)
+    try {
+      const params: SignTransactionsParams = {
+        providerId: this.providerId,
+        genesisHash,
+        txns: txnsToSign
+      }
+      this.ctx.logger.debug('Sending sign_transactions request...', txnsToSign)
+      const stxns = await session.run(
+        buildRequest(LiquidReference.signTransactionsRequest, params),
+        LiquidReference.signTransactionsResponse,
+        (raw) => parseSignTransactionsResult(raw, this.providerId, txnsToSign.length),
+        this.requestTimeoutMs,
+        this.checkNetwork(genesisHash)
+      )
+
+      // Everything below is re-validation of untrusted wallet output; it runs after the
+      // session settled, so any throw here simply rejects the call.
+      return txnsToSign.map((entry, index) => {
+        if (entry.signers && entry.signers.length === 0) return null
+        const value = stxns[index]
+        if (value === null) return null
+        return this.verifySigned(
+          decodeBase64Field(value, `stxns[${index}]`, LIMITS.MAX_STXN_CHARS),
+          decoded[index].txn,
+          index
+        )
+      })
+    } catch (error) {
+      session.fail(toError(error))
+      this.ctx.logger.error('Error signing transactions:', toError(error).message)
+      throw this.translate(error, genesisHash)
+    }
+  }
+
+  /**
+   * Checks that bytes returned by the wallet are really the transaction we asked it to sign:
+   * either a 64-byte raw signature (attached locally) or a signed transaction whose unsigned
+   * part has the same transaction id and which carries a signature of some kind.
+   */
+  private verifySigned(
+    bytes: Uint8Array,
+    original: algosdk.Transaction,
+    index: number
+  ): Uint8Array {
+    if (bytes.length === 64) {
+      // Android reference wallets return the raw ed25519 signature instead of the signed txn.
+      return original.attachSignature(original.sender, bytes)
+    }
+    let signed: algosdk.SignedTransaction
+    try {
+      signed = algosdk.decodeSignedTransaction(bytes)
+    } catch {
+      throw invalid(`stxns[${index}] is not a decodable signed transaction`)
+    }
+    if (signed.txn.txID() !== original.txID()) {
+      throw new LiquidProviderError(
+        `Biatec Wallet returned a signed transaction at position ${index} that does not match the transaction that was sent`,
+        LiquidErrorCode.invalidInput
+      )
+    }
+    if (!signed.sig && !signed.msig && !signed.lsig) {
+      throw invalid(`stxns[${index}] carries no signature`)
+    }
+    return bytes
+  }
+
+  // ---------- Data signing (ARC-0060) ------------------------------------- //
+
+  public signData = async (
+    data: string,
+    metadata: StdSignMetadata
+  ): Promise<StdSignDataResponse> => {
+    let session: PopupSession | undefined
+    try {
+      if (!this.enableSignData) {
+        throw new SignDataError('Method not supported: signData (disabled by options)', 4200)
+      }
+      const genesisHash = this.genesisHash()
+      // Open the popup first: `createStdSignData` is async and would burn the user gesture.
+      session = this.beginSession(this.connectTimeoutMs)
+      const stdSignData = await this.ctx.createStdSignData(data)
+      const item: LiquidStdSigData = {
+        data: stdSignData.data,
+        signer: toBase64Url(stdSignData.signer),
+        domain: stdSignData.domain,
+        authenticatorData: toBase64Url(stdSignData.authenticatorData),
+        scope: metadata.scope,
+        encoding: metadata.encoding
+      }
+      if (stdSignData.requestId) item.requestId = stdSignData.requestId
+      if (stdSignData.hdPath) item.hdPath = stdSignData.hdPath
+
+      const params: SignDataParams = { providerId: this.providerId, genesisHash, items: [item] }
+      const signatures = await session.run(
+        buildRequest(LiquidReference.signDataRequest, params),
+        LiquidReference.signDataResponse,
+        (raw) => parseSignDataResult(raw, this.providerId, 1),
+        this.requestTimeoutMs,
+        this.checkNetwork(genesisHash)
+      )
+      const signature = signatures[0]
+      if (signature === null) throw new SignDataError('Wallet returned no signature', 4001)
+      return {
+        ...stdSignData,
+        signature: decodeBase64Field(signature, 'signatures[0]', LIMITS.MAX_SIGNATURE_CHARS)
+      }
+    } catch (error) {
+      session?.fail(toError(error))
+      if (error instanceof SignDataError) {
+        this.ctx.logger.error('Error signing data:', error.message)
+        throw error
+      }
+      const code =
+        error instanceof LiquidProviderError && [4001, 4100, 4200, 4300].includes(error.code)
+          ? error.code
+          : error instanceof LiquidProviderError &&
+              (error.code === LiquidErrorCode.methodNotSupported ||
+                error.code === LiquidErrorCode.networkNotSupported)
+            ? 4200
+            : 4300
+      this.ctx.logger.error('Error signing data:', toError(error).message)
+      throw new SignDataError(toError(error).message || 'Unknown error signing data', code, error)
+    }
+  }
+
+  // ---------- Internals --------------------------------------------------- //
+
+  private storeAccounts(result: EnableResult, genesisHash: string): WalletAccount[] {
+    const accounts: WalletAccount[] = result.accounts.map((account, i) => ({
+      name: account.name ?? `${this.ctx.getMetadataName()} Account ${i + 1}`,
+      address: account.address,
+      metadata: {
+        method: 'direct',
+        walletOrigin: this.walletOrigin,
+        genesisHash
+      } satisfies BiatecAccountMetadata
+    }))
+    const walletState = this.ctx.store.getWalletState()
+    if (!walletState) {
+      const newState: WalletState = { accounts, activeAccount: accounts[0] }
+      this.ctx.store.addWallet(newState)
+    } else {
+      this.ctx.store.setAccounts(accounts)
+    }
+    return accounts
+  }
+}

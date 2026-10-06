@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import * as api from './index'
 import { BiatecWalletAdapter, WALLET_ID, biatec } from './index'
 
 describe('biatec factory', () => {
@@ -52,5 +53,33 @@ describe('biatec factory', () => {
     expect(biatec({ projectId, liquid: { origin: 'https://liquid.example.com' } }).options).toEqual(
       { projectId, liquid: { origin: 'https://liquid.example.com' } }
     )
+  })
+
+  it('passes the direct and walletconnect options through, without requiring a projectId', () => {
+    expect(biatec({ walletconnect: false, liquid: false }).options).toEqual({
+      walletconnect: false,
+      liquid: false
+    })
+    const direct = { walletUrl: 'http://localhost:8080', popupFeatures: 'popup,width=400' }
+    expect(biatec({ projectId, direct, defaultMethod: 'direct' }).options).toEqual({
+      projectId,
+      direct,
+      defaultMethod: 'direct'
+    })
+    expect(biatec({ projectId, direct: false }).options).toEqual({ projectId, direct: false })
+  })
+})
+
+describe('export surface', () => {
+  it('exports the Direct errors and protocol constants', () => {
+    expect(new api.PopupBlockedError()).toBeInstanceOf(api.SessionError)
+    expect(new api.DirectNetworkMismatchError('x', 'g')).toBeInstanceOf(api.SessionError)
+    expect(api.DIRECT_READY_REFERENCE).toBe('biatec:direct:ready')
+    expect(api.DIRECT_PROTOCOL_VERSION).toBe(1)
+    expect(api.DIRECT_ROUTE).toBe('/direct')
+    expect(api.DIRECT_WINDOW_NAME).toBe('biatec-wallet-direct')
+    expect(api.LiquidReference.enableRequest).toBe('arc0027:enable:request')
+    expect(api.LiquidReference.enableResponse).toBe('arc0027:enable:response')
+    expect(api.LiquidReference.disableRequest).toBe('arc0027:disable:request')
   })
 })

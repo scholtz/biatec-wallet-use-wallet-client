@@ -20,9 +20,9 @@ multi-chain session behavior described below. `BiatecWalletAdapter` reimplements
 transaction-signing flow (same wire format, same helper functions from `@txnlab/use-wallet/adapter`)
 and adds `signData()` and eager multi-chain negotiation on top.
 
-## One wallet, two transports
+## One wallet, three transports
 
-`BiatecWalletAdapter` is a single `BaseWallet` subclass (id `biatec`) that owns two transport
+`BiatecWalletAdapter` is a single `BaseWallet` subclass (id `biatec`) that owns up to three transport
 implementations — plain classes, not separate `BaseWallet`s — and dispatches to whichever one a
 session is using:
 
@@ -30,6 +30,12 @@ session is using:
   relay flow described below.
 - `src/transports/liquid-transport.ts` — `LiquidTransport`, the Liquid Auth / WebRTC flow
   described in [Liquid Auth transport](#liquid-auth-transport).
+- `src/transports/direct-transport.ts` — `DirectTransport`, the popup + `postMessage` flow
+  described in [Direct transport](#direct-transport); response validators live in
+  `src/transports/direct-validation.ts`.
+
+Each transport can be switched off (`walletconnect: false`, `liquid: false`, `direct: false`);
+the adapter keeps a nullable field per transport and dispatches through `getTransport(method)`.
 
 Both transports receive a `TransportContext` (`src/transports/types.ts`) built once in the
 adapter's constructor: bound references to `this.store`, `this.logger`, `this.addresses`,
@@ -40,7 +46,7 @@ directly, since only the outer adapter is allowed to extend `BaseWallet`.
 ### Unified `connect()` and the connect dialog
 
 ```ts
-connect(args?: { method?: 'walletconnect' | 'liquid' })
+connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 ```
 
 - `args.method` given → skip the dialog's method selector, connect with that transport directly
@@ -54,8 +60,19 @@ connect(args?: { method?: 'walletconnect' | 'liquid' })
   actually completes wins; the adapter tears down the other transport's still-pending attempt.
   Cancelling (✕, backdrop click, Escape, or the dialog rejecting both attempts) rejects
   `connect()`.
-- No `args`, Liquid disabled (`liquid: false`) → always WalletConnect, no selector shown — the
-  dialog still appears (unless `onDisplayUri` is set) with only the QR/link content.
+- No `args`, only one transport enabled → no selector shown — the dialog still appears (unless
+  `onDisplayUri` is set) with only that method's content (QR/link, or the "Open Biatec Wallet"
+  button for Direct).
+- `defaultMethod` (default `walletconnect`) picks the pre-selected tab. **Direct is never started
+  by merely selecting its tab**: `window.open` only works inside a user gesture, so the tab shows
+  an "Open Biatec Wallet" button whose click handler calls `onSelectMethod('direct')` →
+  `startTransport('direct')` → `DirectTransport.connect()` → `window.open`, all synchronously
+  (no `await` anywhere on that path; the unit tests assert `window.open` has been called before
+  the first tick yields). When `defaultMethod: 'direct'` or `connect({ method: 'direct' })` is
+  used, `connect()` itself must be called from the click and opens the popup immediately.
+- A blocked popup (`PopupBlockedError`) is not a failure of the method: the dialog stays open in
+  a `popup-blocked` state with the button to retry. If another method completes first, the
+  adapter closes any pending Direct popup.
 
 Whichever transport is chosen calls back into the adapter's `onDisplayUri` (if the consumer
 supplied one) with a `BiatecDisplayUriInfo` (`{ method, requestId?, origin? }`) — enough to label
@@ -65,7 +82,8 @@ content, and closes itself the moment a method is picked, handing off entirely t
 own UI for that method's URI.
 
 Every persisted `WalletAccount` is tagged with `BiatecAccountMetadata` — `{ method:
-'walletconnect' }` or `{ method: 'liquid', requestId, origin }` — so `resumeSession()` can read
+'walletconnect' }`, `{ method: 'liquid', requestId, origin }` or `{ method: 'direct', walletOrigin,
+genesisHash }` — so `resumeSession()` can read
 which transport a previous session used and dispatch to the matching transport's own resume
 logic without guessing. Accounts with no `method` tag (from a pre-merge persisted session) fall
 back to WalletConnect.
@@ -191,8 +209,11 @@ this specific request" (`4001`).
 ## Testing strategy
 
 `src/adapter.test.ts` covers dispatch logic only (picker shown/skipped, `resumeSession()`
-branching on account metadata). The transports have their own suites —
-`src/transports/walletconnect-transport.test.ts` and `src/transports/liquid-transport.test.ts` —
+branching on account metadata, the synchronous popup-open path through the dialog). The
+transports have their own suites — `src/transports/walletconnect-transport.test.ts`,
+`src/transports/liquid-transport.test.ts` and `src/transports/direct-transport.test.ts` (a fake
+`window` with a stub popup and `message` events; covers origin/source checks, malformed payloads,
+tampered signed transactions, blocked/closed popups and timeouts) —
 each driving the full `BiatecWalletAdapter` through `@txnlab/use-wallet/testing`'s
 `createTestHarness()` with an explicit `connect({ method: '...' })` to bypass the picker, and
 mocking that transport's SDKs at the module level (`vi.mock('@walletconnect/sign-client', ...)`,
@@ -243,3 +264,43 @@ sequenceDiagram
 
 The full protocol, its security model and the service deployment constraints are in
 [LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md).
+
+## Direct transport
+
+`src/transports/direct-transport.ts`'s `DirectTransport` talks to the wallet in a popup over
+`window.postMessage`, relay-free. The normative protocol is [DIRECT_PROTOCOL.md](DIRECT_PROTOCOL.md);
+this is the shape of the implementation.
+
+```mermaid
+sequenceDiagram
+    participant User
+    participant App as dApp (click handler)
+    participant Transport as DirectTransport
+    participant Popup as Wallet popup (WALLET_ORIGIN/direct)
+
+    User->>App: click
+    App->>Transport: connect() / signTransactions() / signData()
+    Transport->>Popup: window.open(url?origin=…, 'biatec-wallet-direct')  (synchronous)
+    Popup-->>Transport: { v:1, reference:'biatec:direct:ready', capabilities }
+    Note over Transport: accept iff event.origin === WALLET_ORIGIN && event.source === popup
+    Transport->>Popup: postMessage({ id, reference:'arc0027:…:request', params }, WALLET_ORIGIN)
+    Popup-->>Transport: { id, requestId, reference:'arc0027:…:response', result | error }
+    Note over Transport: validate every field; check returned txns match what was sent
+    Transport-->>App: accounts / signed txns / signature
+```
+
+- A `PopupSession` (private to the module) owns **one popup and one request**: the `message`
+  listener, the ready/response timers, the 500 ms `popup.closed` poll and the abort signal. It
+  settles exactly once; every exit path removes the listener, clears the timers and (on failure)
+  closes the popup.
+- `beginSession()` is synchronous and is the first thing `connect` / `signTransactions` run
+  after pure input preparation, so `window.open` happens inside the user's gesture. `signData`
+  opens the popup _before_ awaiting `createStdSignData` for the same reason.
+- `resumeSession()` opens nothing: the accounts are already in the use-wallet store, tagged
+  `{ method: 'direct', walletOrigin, genesisHash }`. Each later signing call opens a fresh
+  popup; a session whose `walletOrigin` differs from the currently pinned origin is dropped.
+- Only one popup/request may be in flight; concurrent calls reject with `4200` rather than
+  navigating the first popup away (they share the window name `biatec-wallet-direct`).
+- The wallet's answers are untrusted data: `direct-validation.ts` type-checks and bounds every
+  field, `algosdk.isValidAddress` gates returned accounts, and a returned signed transaction must
+  decode and have the same txID as the transaction that was sent.

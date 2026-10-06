@@ -45,8 +45,14 @@ themeToggle.onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'da
 // No `onDisplayUri` here, so `connect()` shows the adapter's own built-in dialog: one window
 // with a method selector (WalletConnect / Liquid Auth) on the left and the QR code for whichever
 // method is selected on the right — see src/connect-dialog.ts in the adapter package.
+// Only for local/e2e wallet development: point the Direct popup at another wallet origin.
+// Leave VITE_DIRECT_WALLET_URL unset to use https://wallet.biatec.io.
+const directWalletUrl = import.meta.env.VITE_DIRECT_WALLET_URL as string | undefined
+
 const manager = new WalletManager({
-  wallets: [biatec({ projectId })],
+  wallets: [
+    biatec({ projectId, ...(directWalletUrl ? { direct: { walletUrl: directWalletUrl } } : {}) })
+  ],
   networks,
   defaultNetwork: 'testnet',
   options: { debug: true }
@@ -75,6 +81,7 @@ networkSelect.onchange = async () => {
 function render() {
   const connected = wallet.isConnected
   $('connect').hidden = connected
+  $('connect-popup').hidden = connected
   $('disconnect').hidden = !connected
   $('sign-txn').hidden = !connected
   $('sign-data').hidden = !connected
@@ -91,19 +98,34 @@ $('connect').onclick = async () => {
   }
 }
 
+// Biatec Direct: `connect({ method: 'direct' })` is called straight from the click handler (no
+// await before it), so the browser lets the wallet popup open.
+$('connect-popup').onclick = async () => {
+  try {
+    const accounts = await wallet.connect({ method: 'direct' })
+    log('connected (popup):', accounts)
+  } catch (e) {
+    log('connect failed:', String(e))
+  }
+}
+
 $('disconnect').onclick = () => wallet.disconnect()
 
 $('sign-txn').onclick = async () => {
-  const sender = wallet.activeAddress!
-  const suggestedParams = await manager.algodClient.getTransactionParams().do()
-  const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
-    sender,
-    receiver: sender,
-    amount: 0,
-    suggestedParams
-  })
-  const signed = await wallet.signTransactions([txn])
-  log('signed txn bytes:', signed[0]?.length)
+  try {
+    const sender = wallet.activeAddress!
+    const suggestedParams = await manager.algodClient.getTransactionParams().do()
+    const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender,
+      receiver: sender,
+      amount: 0,
+      suggestedParams
+    })
+    const signed = await wallet.signTransactions([txn])
+    log('signed txn bytes:', signed[0]?.length)
+  } catch (e) {
+    log('sign failed:', String(e))
+  }
 }
 
 $('sign-data').onclick = async () => {

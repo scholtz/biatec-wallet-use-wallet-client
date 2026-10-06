@@ -13,10 +13,12 @@ Connects your Algorand / AVM dApp to Biatec Wallet with
 - ARC-0060 arbitrary data signing (`algo_signData`) — `wallet.signData()` / `canSignData` work out of the box,
 - multi-chain sessions: Algorand mainnet, testnet, betanet, fnet, Voi mainnet and Aramid mainnet
   are all approved in one session, so `setActiveNetwork()` does not require a reconnect,
-- **two connection transports under one wallet**: WalletConnect v2 (relay-based) and Liquid Auth
-  (passkey-linked, peer-to-peer WebRTC, no relay in the signing path) — `connect()` shows a
-  modern, dark/light-aware dialog with a method selector next to a live QR code, or skip it with
-  `connect({ method: 'liquid' })`,
+- **three connection transports under one wallet**: WalletConnect v2 (relay-based), Liquid Auth
+  (passkey-linked, peer-to-peer WebRTC, no relay in the signing path) and **Direct** (the wallet
+  in a popup, ARC-0027 over `postMessage` — no relay, no signaling server, works on
+  `http://localhost`) — `connect()` shows a modern, dark/light-aware dialog with a method selector
+  next to a live QR code (or an "Open Biatec Wallet" button for Direct), or skip it with
+  `connect({ method: 'liquid' })` / `connect({ method: 'direct' })`,
 - that same built-in dialog **or** your own QR / deep-link UI through `onDisplayUri`.
 
 Works with every use-wallet framework binding: `@txnlab/use-wallet-react`, `-vue`, `-solid`, `-svelte`
@@ -128,30 +130,36 @@ new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
 
 `biatec(options)` accepts:
 
-| Option            | Type                                                                 | Default                         | Description                                                                                                                                              |
-| ----------------- | -------------------------------------------------------------------- | ------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `projectId`       | `string`                                                             | **required**                    | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                    |
-| `relayUrl`        | `string`                                                             | `wss://relay.walletconnect.com` | WalletConnect relay.                                                                                                                                     |
-| `metadata`        | `SignClientTypes.Metadata`                                           | detected from the document      | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for both transports.                                                   |
-| `onDisplayUri`    | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                               | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves. |
-| `enableSignData`  | `boolean`                                                            | `true`                          | Expose `signData()` on both transports. Set `false` to advertise transaction signing only.                                                               |
-| `chains`          | `string[]`                                                           | `[]`                            | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).          |
-| `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults        | Liquid Auth transport config, or `false` to disable it and always use WalletConnect. See [docs/API.md](docs/API.md#biatecliquidtransportoptions).        |
-| `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo              | Override how the wallet appears in your wallet picker.                                                                                                   |
+| Option            | Type                                                                 | Default                                    | Description                                                                                                                                              |
+| ----------------- | -------------------------------------------------------------------- | ------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`       | `string`                                                             | **required** unless `walletconnect: false` | WalletConnect Cloud project id (used by the WalletConnect transport).                                                                                    |
+| `walletconnect`   | `false`                                                              | enabled                                    | Pass `false` to disable the WalletConnect transport; this is the only case where `projectId` may be omitted.                                             |
+| `relayUrl`        | `string`                                                             | `wss://relay.walletconnect.com`            | WalletConnect relay.                                                                                                                                     |
+| `metadata`        | `SignClientTypes.Metadata`                                           | detected from the document                 | dApp metadata (name, description, url, icons) shown to the user in Biatec Wallet, for both transports.                                                   |
+| `onDisplayUri`    | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | –                                          | Receive the pairing/session URI and render your own QR / link. When set, the built-in dialog is not used. `connect()` resolves once the wallet approves. |
+| `enableSignData`  | `boolean`                                                            | `true`                                     | Expose `signData()` on both transports. Set `false` to advertise transaction signing only.                                                               |
+| `chains`          | `string[]`                                                           | `[]`                                       | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).          |
+| `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults                   | Liquid Auth transport config, or `false` to disable it and always use WalletConnect. See [docs/API.md](docs/API.md#biatecliquidtransportoptions).        |
+| `direct`          | `BiatecDirectTransportOptions \| false`                              | enabled, Biatec defaults                   | Direct (popup + postMessage) transport config, or `false` to disable it. See [docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md).                         |
+| `defaultMethod`   | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'walletconnect'`                          | Method pre-selected in the connect dialog (must be enabled).                                                                                             |
+| `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo                         | Override how the wallet appears in your wallet picker.                                                                                                   |
 
 ### Choosing a connection method
 
-When both transports are enabled (the default), `connect()` shows a modern, glassmorphic dialog
-— a method selector (WalletConnect / Liquid Auth) next to a live QR code / link for whichever
-method is selected. WalletConnect is selected by default, so its QR is visible immediately;
-switching to the Liquid Auth tab connects that transport on demand. It follows the system's
+When several transports are enabled (the default is all three), `connect()` shows a modern,
+glassmorphic dialog — a method selector (WalletConnect / Liquid Auth / Biatec Direct) next to a
+live QR code / link for whichever method is selected. WalletConnect is selected by default, so its
+QR is visible immediately; switching to the Liquid Auth tab connects that transport on demand, and
+the Direct tab shows an **Open Biatec Wallet** button (a popup can only be opened from a click, so
+it is never opened just by selecting the tab). It follows the system's
 light/dark theme automatically (or an explicit `data-theme` on `<html>`, if your page sets one),
 and it's translated into every language Biatec Wallet itself ships — auto-detected from the
 browser, or force one with `biatec({ projectId, locale: 'sk' })` (see
 [Localization](docs/API.md#localization)). Skip the selector from your own UI with
-`connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })`, or disable Liquid Auth
-entirely with `biatec({ projectId, liquid: false })` so `connect()` always goes straight to
-WalletConnect.
+`connect({ method: 'liquid' })`, `connect({ method: 'walletconnect' })` or
+`connect({ method: 'direct' })`, or disable transports you don't want:
+`biatec({ projectId, liquid: false, direct: false })` makes `connect()` always go straight to
+WalletConnect. Change which tab is pre-selected with `defaultMethod`.
 
 ### Custom QR code instead of the built-in dialog
 
@@ -244,18 +252,51 @@ See [docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) for the full pr
 deployment requirements (the service must be hosted under the wallet's domain because of the
 WebAuthn RP-ID rule). Pass `liquid: false` to disable this transport entirely.
 
+## Direct transport (popup + postMessage, no relay)
+
+`direct` opens Biatec Wallet in a **popup** and exchanges ARC-0027 messages with it over
+`window.postMessage`. No WalletConnect relay, no Liquid Auth service, no QR code, no `projectId`
+— and it works for `http://localhost` dApps and offline PWAs. The browser itself tells the wallet
+which site is asking (`event.origin`), and the adapter pins the wallet's origin, so there is
+nothing to pair and nothing to encrypt.
+
+```ts
+// Direct only: zero servers, no projectId.
+biatec({ walletconnect: false, liquid: false })
+
+// ...and start it from a click handler (the browser blocks popups opened any other way):
+button.onclick = () => wallet.connect({ method: 'direct' })
+```
+
+Rules of thumb:
+
+- **Call `connect()` / `signTransactions()` / `signData()` from a user gesture**, with no `await`
+  before the call. Each signing request opens a fresh popup; a blocked popup rejects with
+  `PopupBlockedError` (ask the user to allow popups and click again — the built-in dialog does
+  this for you).
+- **Do not send `Cross-Origin-Opener-Policy: same-origin`** from your dApp (it severs the channel
+  to the popup). Use `same-origin-allow-popups` or no COOP header.
+- Everything the wallet returns is validated (addresses, array lengths, and that each returned
+  signed transaction is really the one you sent) before it reaches your code.
+- `direct: { walletUrl }` is for local wallet development only: it must be `https` or
+  `localhost`/`127.0.0.1`, and logs a warning.
+
+Full normative protocol, security rules and the wallet-side requirements:
+[docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md).
+
 ## Documentation
 
-| Doc                                                          | What's in it                                                                                                   |
-| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------- |
-| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)           | Full walkthrough — React/Vue/Solid/Svelte/vanilla, networks, custom QR UI, ARC-0060.                           |
-| [docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) | The Liquid Auth transport: linking, signaling, ARC-0027/ARC-0060 messages, security model, service deployment. |
-| [docs/API.md](docs/API.md)                                   | Every export: `biatec()` options, `BiatecWalletAdapter` members, error codes, network helpers.                 |
-| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                 | Internal design — session lifecycle, multi-chain negotiation, signing flows, sequence diagram.                 |
-| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)           | Fixes for the errors and dead-ends you're most likely to hit.                                                  |
-| [docs/RELEASING.md](docs/RELEASING.md)                       | How the automated Changesets release pipeline works.                                                           |
-| [docs/RESEARCH.md](docs/RESEARCH.md)                         | Original research: how use-wallet v5 adapters work, what Biatec Wallet supports, sources.                      |
-| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor workflow, code style, testing, release checklist.                                                  |
+| Doc                                                          | What's in it                                                                                                         |
+| ------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------- |
+| [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)           | Full walkthrough — React/Vue/Solid/Svelte/vanilla, networks, custom QR UI, ARC-0060.                                 |
+| [docs/LIQUID_AUTH_PROTOCOL.md](docs/LIQUID_AUTH_PROTOCOL.md) | The Liquid Auth transport: linking, signaling, ARC-0027/ARC-0060 messages, security model, service deployment.       |
+| [docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md)           | The Direct (popup + postMessage) transport: messages, origin rules, error codes, wallet- and dApp-side requirements. |
+| [docs/API.md](docs/API.md)                                   | Every export: `biatec()` options, `BiatecWalletAdapter` members, error codes, network helpers.                       |
+| [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)                 | Internal design — session lifecycle, multi-chain negotiation, signing flows, sequence diagram.                       |
+| [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)           | Fixes for the errors and dead-ends you're most likely to hit.                                                        |
+| [docs/RELEASING.md](docs/RELEASING.md)                       | How the automated Changesets release pipeline works.                                                                 |
+| [docs/RESEARCH.md](docs/RESEARCH.md)                         | Original research: how use-wallet v5 adapters work, what Biatec Wallet supports, sources.                            |
+| [CONTRIBUTING.md](CONTRIBUTING.md)                           | Contributor workflow, code style, testing, release checklist.                                                        |
 
 ## Integrating with an AI coding agent
 

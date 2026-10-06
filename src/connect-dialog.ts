@@ -1,8 +1,10 @@
 /**
  * Built-in connect UI for the unified Biatec Wallet connector: a modern, glassmorphic dialog
- * that shows a method selector (WalletConnect / Liquid Auth) on the left and the pairing QR
- * code / link for whichever method is selected on the right — defaulting to WalletConnect when
- * both are enabled. Supports light and dark mode via `prefers-color-scheme`, and also respects
+ * that shows a method selector (WalletConnect / Liquid Auth / Direct) on the left and the
+ * pairing QR code / link for whichever method is selected on the right — defaulting to
+ * WalletConnect when enabled. The Direct method has no QR code: its panel is an "Open Biatec
+ * Wallet" button whose click opens the popup synchronously (browsers block popups that are not
+ * opened from a user gesture). Supports light and dark mode via `prefers-color-scheme`, and also respects
  * an explicit `data-theme="dark"` / `data-theme="light"` attribute on `<html>` if the host page
  * sets one (e.g. from its own theme toggle) — that always wins over the system preference.
  * Localized into every language Biatec Wallet itself ships (see `src/i18n.ts`), auto-detected
@@ -19,6 +21,7 @@ import type { BiatecMethod, DialogHandle } from './transports/types'
 const STYLE_ID = 'biatec-connect-dialog-styles'
 
 const METHOD_ICON: Record<BiatecMethod, string> = {
+  direct: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1h-2V5H6v10h1v2H6a2 2 0 0 1-2-2V5Zm6 5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-9Zm2 1v8h6v-8h-6Z" fill="currentColor"/></svg>`,
   walletconnect: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 9.9c3-2.9 7.9-2.9 10.9 0l.4.3a.4.4 0 0 1 0 .6l-1.2 1.2a.2.2 0 0 1-.3 0l-.5-.5c-2.1-2-5.5-2-7.6 0l-.6.5a.2.2 0 0 1-.3 0L6.1 10.8a.4.4 0 0 1 0-.6zm13.5 2.5 1 1a.4.4 0 0 1 0 .6l-4.7 4.6a.4.4 0 0 1-.6 0l-3.3-3.3a.1.1 0 0 0-.2 0l-3.3 3.3a.4.4 0 0 1-.6 0L3.6 14a.4.4 0 0 1 0-.6l1-1a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0z" fill="currentColor"/></svg>`,
   liquid: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 6 12 6.3 12.3a1 1 0 0 0 1.4 0C13 21 19 14.2 19 9a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" fill="currentColor"/></svg>`
 }
@@ -41,7 +44,7 @@ async function renderQrDataUrl(uri: string): Promise<string> {
 }
 
 export interface ConnectMethodState {
-  status: 'connecting' | 'ready' | 'error'
+  status: 'connecting' | 'ready' | 'error' | 'popup-blocked'
   uri?: string
   error?: string
 }
@@ -66,7 +69,12 @@ export interface ConnectDialogOptions {
    * one of the languages Biatec Wallet ships (see `SUPPORTED_LOCALES` in `src/i18n.ts`).
    */
   locale?: string
-  /** Fired the first time a method is selected (either the default, or a manual tab click). */
+  /**
+   * Fired the first time a method is selected (either the default, or a manual tab click) —
+   * except `direct` while the dialog renders content: there selecting the tab only shows the
+   * "Open Biatec Wallet" button, and this fires (every time) from that button's click handler,
+   * synchronously, so the popup is opened inside the user's gesture.
+   */
   onSelectMethod: (method: BiatecMethod) => void
   onCancel: () => void
 }
@@ -125,6 +133,11 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   function select(method: BiatecMethod, isInitial = false): void {
     selected = method
     renderMethods()
+    if (showContent && method === 'direct') {
+      // Never open a popup merely because a tab was highlighted: wait for the button.
+      renderContent()
+      return
+    }
     if (!started.has(method)) {
       started.add(method)
       // The initial default selection is started explicitly by the caller right after this
@@ -232,9 +245,44 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     }
   }
 
+  function renderDirectContent(state: ConnectMethodState | undefined): void {
+    if (!contentEl) return
+    const methodLabel = i18n.methodLabel.direct
+    const connecting = state?.status === 'connecting'
+    const problem =
+      state?.status === 'popup-blocked'
+        ? i18n.popupBlocked
+        : state?.status === 'error'
+          ? (state.error ?? i18n.genericError)
+          : null
+    contentEl.innerHTML = `
+      <h3 class="bcd-content-title">${escapeHtml(formatMethod(i18n.connectWith, methodLabel))}</h3>
+      <div class="bcd-direct-art">${METHOD_ICON.direct}</div>
+      ${
+        connecting
+          ? `<div class="bcd-spinner bcd-spinner--small"></div><p class="bcd-hint">${escapeHtml(i18n.waitingForWallet)}</p>`
+          : problem
+            ? `<p class="bcd-error">${escapeHtml(problem)}</p>`
+            : `<p class="bcd-hint">${i18n.methodInstructions.direct}</p>`
+      }
+      <button type="button" class="bcd-copy bcd-open">${escapeHtml(i18n.openWallet)}</button>
+      <p class="bcd-footnote">${escapeHtml(i18n.noWallet)}
+        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">${escapeHtml(i18n.getItHere)}</a>
+      </p>
+    `
+    const openButton = contentEl.querySelector('.bcd-open') as HTMLButtonElement
+    // Must call straight into the adapter with no await/timer in between: this click is the
+    // user gesture that lets `window.open` succeed.
+    openButton.onclick = () => options.onSelectMethod('direct')
+  }
+
   function renderContent(): void {
     if (!contentEl) return
     const state = states.get(selected)
+    if (selected === 'direct') {
+      renderDirectContent(state)
+      return
+    }
     const methodLabel = i18n.methodLabel[selected]
     if (!state || state.status === 'connecting') {
       contentEl.innerHTML = `<div class="bcd-content-state"><div class="bcd-spinner"></div><p class="bcd-hint">${escapeHtml(formatMethod(i18n.preparing, methodLabel))}</p></div>`
@@ -481,6 +529,18 @@ html[data-theme='light'] .bcd-overlay {
   place-items: center;
 }
 .bcd-qr { width: 100%; height: 100%; }
+.bcd-direct-art {
+  width: 4.5rem;
+  height: 4.5rem;
+  padding: 1.1rem;
+  margin-bottom: 0.25rem;
+  border-radius: 20px;
+  background: var(--bcd-accent-soft);
+  color: var(--bcd-accent);
+  box-sizing: border-box;
+}
+.bcd-direct-art svg { width: 100%; height: 100%; }
+.bcd-spinner--small { width: 1.4rem; height: 1.4rem; margin-top: 0.75rem; }
 .bcd-hint { margin: 0.85rem 0 0; font-size: 0.8rem; color: var(--bcd-muted); line-height: 1.4; }
 .bcd-link { color: var(--bcd-accent); text-decoration: none; }
 .bcd-link:hover { text-decoration: underline; }

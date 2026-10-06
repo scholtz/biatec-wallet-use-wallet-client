@@ -254,6 +254,10 @@ library such as [`qrcode`](https://www.npmjs.com/package/qrcode), and remember
 
 ## 9. Liquid Auth and the method picker
 
+> There is also a third method, **Direct (popup)** — see [section 10](#10-direct-popup-no-relay-no-qr-code).
+> The built-in dialog lists all three; WalletConnect stays the pre-selected tab unless you pass
+> `defaultMethod`.
+
 Liquid Auth (a passkey-linked, peer-to-peer WebRTC connection with no WalletConnect relay in the
 signing path) is enabled by default alongside WalletConnect — it's the `liquid` option on
 `biatec()`, not a separate factory:
@@ -281,6 +285,48 @@ with the linked account exactly like the WalletConnect path. Everything else
 (`signTransactions`, `signData`, network switching) is identical regardless of which transport
 connected. Read [docs/LIQUID_AUTH_PROTOCOL.md](LIQUID_AUTH_PROTOCOL.md) for how it works and what
 the service deployment needs.
+
+## 10. Direct (popup): no relay, no QR code
+
+`direct` opens Biatec Wallet in a popup and talks to it over `window.postMessage`. It needs no
+WalletConnect project id, no Liquid Auth service and no internet round-trip other than loading
+the wallet itself, and it works for `http://localhost` dApps.
+
+```ts
+// Direct only — projectId can be omitted because WalletConnect is switched off.
+const manager = new WalletManager({
+  wallets: [biatec({ walletconnect: false, liquid: false })],
+  networks
+})
+const wallet = manager.getWallet('biatec')!
+
+// Must run inside a click handler, with no `await` before the call.
+connectButton.onclick = () => wallet.connect({ method: 'direct' })
+```
+
+Things to know:
+
+- **Start it from a user gesture.** Browsers only let `window.open` through when it is called
+  synchronously from a click/tap. `connect()`, `signTransactions()` and `signData()` each open a
+  fresh popup (the wallet answers exactly one request per popup), so call them straight from an
+  event handler — building the transaction beforehand is fine, `await`ing something _before_
+  calling `signTransactions` is not. If the browser blocks the popup you get a
+  `PopupBlockedError`; the built-in dialog turns that into an "allow popups, then click again"
+  hint.
+- **Do not set `Cross-Origin-Opener-Policy: same-origin`** on your dApp: it severs the
+  connection to the popup. `same-origin-allow-popups` (or no COOP header) is fine.
+- With the built-in dialog, the **Biatec Direct** tab shows an _Open Biatec Wallet_ button instead
+  of a QR code; selecting the tab alone never opens a popup. Calling
+  `connect({ method: 'direct' })` yourself from a click skips the picker.
+- `biatec({ projectId, defaultMethod: 'direct' })` pre-selects (and, on `connect()`, immediately
+  starts) the popup — only do that when `connect()` is called from a click.
+- The wallet decides which accounts the site may use (`enable` returns the accounts the user
+  ticked). Switching `setActiveNetwork()` to a network the wallet isn't on fails with
+  `DirectNetworkMismatchError` (`4004`).
+- Local wallet development: `biatec({ …, direct: { walletUrl: 'http://localhost:8080' } })`
+  (https or `localhost`/`127.0.0.1` only; logs a warning).
+
+The full protocol and security rules are in [DIRECT_PROTOCOL.md](DIRECT_PROTOCOL.md).
 
 ## Next steps
 

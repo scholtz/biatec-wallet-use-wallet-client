@@ -104,7 +104,7 @@ export const walletManager = new WalletManager({
 Read the project id from whatever env var convention the framework uses
 (`import.meta.env.VITE_*` for Vite, `process.env.NEXT_PUBLIC_*` for Next.js, etc.) — **never**
 hardcode it as a literal string in committed code. Add the corresponding entry to `.env.example`
-if one exists. **`projectId` is required even if the dApp mainly wants Liquid Auth** (Step 5b) —
+if one exists. **`projectId` is required even if the dApp mainly wants Liquid Auth** (Step 5b), unless WalletConnect is switched off with `walletconnect: false` (Direct-only, Step 5c) —
 `biatec()` covers both transports under one wallet.
 
 `metadata` is optional; omitting it makes the adapter read `<title>`/`<meta description>`/favicon
@@ -280,18 +280,52 @@ biatec({
 ```
 
 With both transports enabled (the default), calling `wallet.connect()` with no arguments shows a
-**built-in, modern dialog**: a method selector (WalletConnect / Liquid Auth) next to a live QR
-code for whichever method is selected — WalletConnect selected by default so its QR appears
+**built-in, modern dialog**: a method selector (WalletConnect / Liquid Auth / Biatec Direct) next
+to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — WalletConnect selected by default so its QR appears
 immediately, with a tab to switch to Liquid Auth on demand. It follows the system's light/dark
 theme automatically. Leave it as-is unless the user asks for a custom picker UI — in that case,
 build your own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
 `wallet.connect({ method: 'walletconnect' })` directly to skip the built-in one. If the user only
-wants WalletConnect (no selector at all), pass `liquid: false`.
+wants WalletConnect (no selector at all), pass `liquid: false, direct: false`.
 
 Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical regardless of
 which transport connected. Do not try to host a Liquid Auth service for the dApp: with the web
 wallet the service must live under the wallet's own domain, which the default `origin` already
 does. Details: `docs/LIQUID_AUTH_PROTOCOL.md` in the package repo.
+
+## 5c. Direct (popup) transport: no relay, no QR code
+
+A **third transport, `direct`**, is also enabled by default: Biatec Wallet opens in a **popup**
+and talks to the dApp over `window.postMessage` — no WalletConnect relay, no Liquid Auth service,
+no QR code, works on `http://localhost`. The built-in dialog lists it as the **Biatec Direct** tab
+with an _Open Biatec Wallet_ button.
+
+```ts
+// A dApp that wants only Direct needs no projectId at all:
+biatec({ walletconnect: false, liquid: false })
+
+// Connect from a click handler — NO `await` before the call, or the browser blocks the popup:
+button.onclick = () => wallet.connect({ method: 'direct' })
+```
+
+Rules to enforce when you wire this up:
+
+- `connect()`, `signTransactions()` and `signData()` must be **called synchronously from a user
+  gesture** (click/tap handler). Each one opens a fresh popup. A blocked popup rejects with
+  `PopupBlockedError` — ask the user to allow popups and click again.
+- Never set `Cross-Origin-Opener-Policy: same-origin` on the dApp (it breaks the popup channel);
+  `same-origin-allow-popups` or no header is fine.
+- `projectId` is only optional when `walletconnect: false` is passed. `defaultMethod: 'direct'`
+  pre-selects (and, on `connect()`, immediately starts) the popup — only do that when `connect()`
+  runs from a click.
+- Do not set `direct.walletUrl` in production (it is for local wallet development, must be https
+  or localhost, and logs a warning). Disable the method with `direct: false` if the user doesn't
+  want it.
+- Error handling worth surfacing in the UI: `PopupBlockedError`, `DirectNetworkMismatchError`
+  (wallet on another network), code `4100` (site not connected in the wallet — reconnect), `4001`
+  (user rejected / closed the popup).
+
+Protocol and security rules: `docs/DIRECT_PROTOCOL.md` in the package repo.
 
 ## 6. Optional: register Voi mainnet / Aramid mainnet
 
@@ -397,16 +431,18 @@ Run these, in order, and don't report the task done until all pass:
 
 ## Troubleshooting quick reference
 
-| Symptom                                                                            | Likely cause                                                                       | Fix                                                                                                                             |
-| ---------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Missing required option: projectId`                                               | Env var not set, wrong prefix, or `.env` not loaded                                | Confirm the exact env var name the framework requires (e.g. `VITE_` / `NEXT_PUBLIC_` prefix) and that it's non-empty at runtime |
-| `No URI found` / connect hangs                                                     | Invalid/placeholder WalletConnect project id, or relay unreachable                 | Get a real id from <https://cloud.reown.com>; check its dashboard for rejected requests                                         |
-| Modal never opens                                                                  | CSP blocks `wss://relay.walletconnect.com`, or `onDisplayUri` set but not rendered | Add the relay host to `connect-src`; confirm your custom URI handler actually shows something                                   |
-| `Network "<id>" has no caipChainId`                                                | Custom `NetworkConfig` missing that field, or `defaultNetwork` typo'd              | Use `BIATEC_EXTRA_NETWORKS`/`caipChainIdFromGenesisHash`, or fix the typo                                                       |
-| `SessionError: No session found!`                                                  | Signing called before `connect()`/`resumeSession()` resolved                       | Gate sign actions on `wallet.isConnected`; call `resumeSessions()` before rendering connected UI in vanilla setups              |
-| Signing breaks right after `setActiveNetwork()`                                    | New network wasn't registered before the session was approved                      | Reconnect once after adding a network, or register every network before first `connect()`                                       |
-| `@vitejs/plugin-react` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED ... './internal'` | `@vitejs/plugin-react` 6.x needs Vite 8; an older `vite` is pinned                 | Bump `vite` to match the plugin's peer requirement                                                                              |
-| `[ERR_PNPM_IGNORED_BUILDS]`                                                        | pnpm 10+ blocks postinstall scripts by default (e.g. `esbuild`)                    | `pnpm approve-builds`, or add `allowBuilds:` to `pnpm-workspace.yaml`                                                           |
+| Symptom                                                                            | Likely cause                                                                                                  | Fix                                                                                                                             |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `Missing required option: projectId`                                               | Env var not set, wrong prefix, or `.env` not loaded                                                           | Confirm the exact env var name the framework requires (e.g. `VITE_` / `NEXT_PUBLIC_` prefix) and that it's non-empty at runtime |
+| `No URI found` / connect hangs                                                     | Invalid/placeholder WalletConnect project id, or relay unreachable                                            | Get a real id from <https://cloud.reown.com>; check its dashboard for rejected requests                                         |
+| Modal never opens                                                                  | CSP blocks `wss://relay.walletconnect.com`, or `onDisplayUri` set but not rendered                            | Add the relay host to `connect-src`; confirm your custom URI handler actually shows something                                   |
+| `Network "<id>" has no caipChainId`                                                | Custom `NetworkConfig` missing that field, or `defaultNetwork` typo'd                                         | Use `BIATEC_EXTRA_NETWORKS`/`caipChainIdFromGenesisHash`, or fix the typo                                                       |
+| `SessionError: No session found!`                                                  | Signing called before `connect()`/`resumeSession()` resolved                                                  | Gate sign actions on `wallet.isConnected`; call `resumeSessions()` before rendering connected UI in vanilla setups              |
+| Signing breaks right after `setActiveNetwork()`                                    | New network wasn't registered before the session was approved                                                 | Reconnect once after adding a network, or register every network before first `connect()`                                       |
+| `PopupBlockedError` (Direct) / popup never opens                                   | `connect`/`signTransactions` not called synchronously from a click (an `await` came first), or popups blocked | Call straight from the click handler; ask the user to allow popups                                                              |
+| Direct rejects with `4001` although the user didn't close the popup                | dApp sends `Cross-Origin-Opener-Policy: same-origin` (severs the opener)                                      | Use `same-origin-allow-popups` or no COOP header                                                                                |
+| `@vitejs/plugin-react` fails with `ERR_PACKAGE_PATH_NOT_EXPORTED ... './internal'` | `@vitejs/plugin-react` 6.x needs Vite 8; an older `vite` is pinned                                            | Bump `vite` to match the plugin's peer requirement                                                                              |
+| `[ERR_PNPM_IGNORED_BUILDS]`                                                        | pnpm 10+ blocks postinstall scripts by default (e.g. `esbuild`)                                               | `pnpm approve-builds`, or add `allowBuilds:` to `pnpm-workspace.yaml`                                                           |
 
 For anything not covered here, read the adapter package's own
 [docs/TROUBLESHOOTING.md](https://github.com/scholtz/biatec-wallet-use-wallet-client/blob/main/docs/TROUBLESHOOTING.md)

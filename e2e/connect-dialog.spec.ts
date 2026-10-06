@@ -32,7 +32,7 @@ test('clicking Connect opens the built-in dialog with WalletConnect selected and
   // selected by default, and that method's content (spinner, then QR/link) on the right —
   // never a second, separate dialog.
   const methods = page.locator('.bcd-method')
-  await expect(methods).toHaveCount(2)
+  await expect(methods).toHaveCount(3)
   await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
   await expect(panel.locator('.bcd-content')).toBeVisible()
   await expect(panel.locator('.bcd-content-state, .bcd-qr-tile')).toBeVisible()

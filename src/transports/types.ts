@@ -25,11 +25,12 @@ export interface TransportContext {
 }
 
 /** The connection method a persisted account/session used, so resume can dispatch correctly. */
-export type BiatecMethod = 'walletconnect' | 'liquid'
+export type BiatecMethod = 'walletconnect' | 'liquid' | 'direct'
 
 export type BiatecAccountMetadata =
   | { method: 'walletconnect' }
   | { method: 'liquid'; requestId: string; origin: string }
+  | { method: 'direct'; walletOrigin: string; genesisHash: string }
 
 /** Handle returned by a dialog-opening function so the caller can dismiss it. */
 export interface DialogHandle {

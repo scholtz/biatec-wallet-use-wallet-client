@@ -2,8 +2,9 @@
 
 ## `Missing required option: projectId`
 
-Thrown synchronously by `biatec({...})` / `new BiatecWalletAdapter(...)`. `projectId` wasn't
-passed, or is `undefined` at construction time — a common cause is reading an env var that Vite/
+Thrown synchronously by `biatec({...})` / `new BiatecWalletAdapter(...)` while the WalletConnect
+transport is enabled. If you only use Direct and/or Liquid Auth, pass `walletconnect: false` and
+drop `projectId`. Otherwise `projectId` wasn't passed, or is `undefined` at construction time — a common cause is reading an env var that Vite/
 Next.js hasn't inlined yet (e.g. missing the `VITE_`/`NEXT_PUBLIC_` prefix, or the `.env` file not
 being loaded because the dev server started before it existed). Log the value right before
 constructing the `WalletManager` to confirm it's a non-empty string.
@@ -116,6 +117,50 @@ the session listed. Otherwise disconnect and connect again.
 
 Both peers are behind symmetric NATs and STUN alone cannot find a path — pass `iceServers`
 with a TURN server. The WebRTC connection state is visible via `adapter.isChannelOpen`.
+
+## Direct: `PopupBlockedError` / the popup never opens
+
+The browser refused `window.open`. It is only allowed synchronously inside a user gesture: call
+`wallet.connect({ method: 'direct' })` / `signTransactions()` / `signData()` directly from a click
+handler, with **no `await` (or `setTimeout`, or promise `.then`) before it**. In frameworks, don't
+route the click through an async function that awaits something first. Also check the browser's
+popup-blocker setting for your site (the address bar shows a "popup blocked" icon); the built-in
+dialog keeps its _Open Biatec Wallet_ button so the user can allow popups and click again.
+
+## Direct: `Biatec Wallet window was closed before the request completed` (code 4001)
+
+Either the user closed the popup, or the channel was severed on open. If the popup visibly
+loaded and you did not close it, your dApp page probably sends
+`Cross-Origin-Opener-Policy: same-origin` (or opens the wallet with `noopener`/`noreferrer`),
+which cuts `window.opener` — use `same-origin-allow-popups` or no COOP header.
+
+## Direct: `Biatec Wallet did not respond — popup blocked or wallet origin unreachable` (code 4002)
+
+The popup opened but never posted its `ready` message to this page within `connectTimeoutMs`.
+Common causes: the wallet origin is unreachable/offline, a custom `direct.walletUrl` doesn't match
+what the wallet expects, the wallet is waiting for the user to unlock it (raise
+`connectTimeoutMs`), or an extension/blocker is interfering. Messages from any origin other than
+the pinned wallet origin (or from any window other than the popup) are ignored on purpose.
+
+## Direct: error `4100` — "site not connected in Biatec Wallet"
+
+The wallet has no session for this site's origin (the user removed it in the wallet, cleared its
+data, or connected from a different origin such as `localhost` vs `127.0.0.1`), or the account
+used is not one the user approved for the site. Call `connect({ method: 'direct' })` again.
+
+## Direct: `DirectNetworkMismatchError` (code 4004)
+
+The wallet is on a different network than the dApp's active network (compared by genesis hash).
+Switch the network in the wallet, or call `setActiveNetwork()` to match; the error carries
+`genesisHash` (requested) and `walletGenesisHashes` (when the wallet reports them).
+
+## Direct: `Biatec Wallet returned a signed transaction … that does not match the transaction that was sent` (code 4200)
+
+The adapter re-checks that each signed transaction the wallet returns has the same transaction id
+as the one it sent, and rejects anything else (a compromised or buggy wallet page, or a
+man-in-the-middle script, could otherwise swap the transaction). Nothing is returned to your code.
+Treat it as a security event: verify the wallet origin (`adapter.directWalletOrigin`) and that you
+are not overriding `direct.walletUrl` in production.
 
 ## Still stuck?
 
