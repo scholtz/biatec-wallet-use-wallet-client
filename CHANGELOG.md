@@ -1,5 +1,11 @@
 # Changelog
 
+## 0.3.1
+
+### Patch Changes
+
+- [#5](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/5) [`5ef2ff3`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/5ef2ff3735196814cde5ddef1f26e61a51095fa9) Thanks [@scholtz](https://github.com/scholtz)! - Document the hosted React example at biatec-wallet-use-wallet-client-example-react.vercel.app.
+
 ## 0.3.0
 
 ### Minor Changes
