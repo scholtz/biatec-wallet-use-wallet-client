@@ -4,6 +4,8 @@
 [![npm version](https://img.shields.io/npm/v/biatec-wallet-use-wallet-client)](https://www.npmjs.com/package/biatec-wallet-use-wallet-client)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+Live demo (React): [biatec-wallet-use-wallet-client-example-react.vercel.app](https://biatec-wallet-use-wallet-client-example-react.vercel.app)
+
 [Biatec Wallet](https://wallet.biatec.io) adapter for [`@txnlab/use-wallet`](https://github.com/TxnLab/use-wallet) v5.
 
 Connects your Algorand / AVM dApp to Biatec Wallet with
@@ -346,6 +348,12 @@ pnpm test:e2e    # playwright, against the built vanilla-ts example (run `pnpm b
 
 Run an example dApp: see [examples/](examples) for a vanilla TypeScript and a React integration
 (`cd examples/react-ts && cp .env.example .env && pnpm install && pnpm dev`).
+
+The React example is deployed at
+[biatec-wallet-use-wallet-client-example-react.vercel.app](https://biatec-wallet-use-wallet-client-example-react.vercel.app).
+Vercel's Root Directory for that project is `examples/react-ts` (`vercel.json` there installs the
+workspace from the repo root and builds this package before Vite, because the example depends on
+it via `workspace:*` → `dist/`).
 
 Full contributor workflow, code style, and testing conventions: [CONTRIBUTING.md](CONTRIBUTING.md).
 

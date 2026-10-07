@@ -6,6 +6,7 @@ coverage/
 .env
 .env.*
 !.env.example
+!examples/react-ts/.env.production
 .vite/
 examples/**/dist/
 test-results/
