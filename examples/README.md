@@ -13,6 +13,9 @@ framework-free one.
 | [`solid-ts`](solid-ts)     | Vite + SolidJS                  | `WalletProvider` / `useWallet()` / `useNetwork()` from `@txnlab/use-wallet-solid`, using Solid's signals and `<Show>`/`<For>` control-flow components.                               |
 | [`svelte-ts`](svelte-ts)   | Vite + Svelte 5                 | `useWalletContext()` / `useWallet()` / `useNetwork()` from `@txnlab/use-wallet-svelte`, using Svelte 5 runes (`$state`).                                                             |
 
+The React example is hosted at
+[biatec-wallet-use-wallet-client-example-react.vercel.app](https://biatec-wallet-use-wallet-client-example-react.vercel.app).
+
 All five examples register **only Biatec Wallet** to keep the integration obvious. To offer users a
 choice of wallets, add more factories from their own `@txnlab/use-wallet-*` packages to the same
 `wallets: [...]` array — see [Alongside other wallets](../README.md#alongside-other-wallets) in
