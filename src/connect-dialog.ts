@@ -1,8 +1,10 @@
 /**
  * Built-in connect UI for the unified Biatec Wallet connector: a modern, glassmorphic dialog
- * that shows a method selector (WalletConnect / Liquid Auth) on the left and the pairing QR
- * code / link for whichever method is selected on the right — defaulting to WalletConnect when
- * both are enabled. Supports light and dark mode via `prefers-color-scheme`, and also respects
+ * that shows a method selector (WalletConnect / Liquid Auth / Direct) on the left and the
+ * pairing QR code / link for whichever method is selected on the right — defaulting to
+ * WalletConnect when enabled. The Direct method has no QR code: its panel is an "Open Biatec
+ * Wallet" button whose click opens the popup synchronously (browsers block popups that are not
+ * opened from a user gesture). Supports light and dark mode via `prefers-color-scheme`, and also respects
  * an explicit `data-theme="dark"` / `data-theme="light"` attribute on `<html>` if the host page
  * sets one (e.g. from its own theme toggle) — that always wins over the system preference.
  * Localized into every language Biatec Wallet itself ships (see `src/i18n.ts`), auto-detected
@@ -19,6 +21,7 @@ import type { BiatecMethod, DialogHandle } from './transports/types'
 const STYLE_ID = 'biatec-connect-dialog-styles'
 
 const METHOD_ICON: Record<BiatecMethod, string> = {
+  direct: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M4 5a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v1h-2V5H6v10h1v2H6a2 2 0 0 1-2-2V5Zm6 5a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-6a2 2 0 0 1-2-2v-9Zm2 1v8h6v-8h-6Z" fill="currentColor"/></svg>`,
   walletconnect: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6.5 9.9c3-2.9 7.9-2.9 10.9 0l.4.3a.4.4 0 0 1 0 .6l-1.2 1.2a.2.2 0 0 1-.3 0l-.5-.5c-2.1-2-5.5-2-7.6 0l-.6.5a.2.2 0 0 1-.3 0L6.1 10.8a.4.4 0 0 1 0-.6zm13.5 2.5 1 1a.4.4 0 0 1 0 .6l-4.7 4.6a.4.4 0 0 1-.6 0l-3.3-3.3a.1.1 0 0 0-.2 0l-3.3 3.3a.4.4 0 0 1-.6 0L3.6 14a.4.4 0 0 1 0-.6l1-1a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0l3.3 3.3a.1.1 0 0 0 .2 0l3.3-3.3a.4.4 0 0 1 .6 0z" fill="currentColor"/></svg>`,
   liquid: `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M12 2a7 7 0 0 0-7 7c0 5.2 6 12 6.3 12.3a1 1 0 0 0 1.4 0C13 21 19 14.2 19 9a7 7 0 0 0-7-7Zm0 9.5A2.5 2.5 0 1 1 12 6.5a2.5 2.5 0 0 1 0 5Z" fill="currentColor"/></svg>`
 }
@@ -40,10 +43,21 @@ async function renderQrDataUrl(uri: string): Promise<string> {
   })
 }
 
+/** Why a method failed, so the dialog can show localized copy instead of the raw message. */
+export type ConnectErrorKind =
+  | 'walletClosed'
+  | 'userRejected'
+  | 'wrongNetwork'
+  | 'timedOut'
+  | 'popupBlocked'
+
 export interface ConnectMethodState {
-  status: 'connecting' | 'ready' | 'error'
+  status: 'connecting' | 'ready' | 'error' | 'popup-blocked'
   uri?: string
+  /** The raw (English, integrator-facing) message; logged by the adapter, never rendered. */
   error?: string
+  /** Rendered through `BiatecTranslation`; `genericError` when absent. */
+  errorKind?: ConnectErrorKind
 }
 
 export interface ConnectDialogController extends DialogHandle {
@@ -66,7 +80,12 @@ export interface ConnectDialogOptions {
    * one of the languages Biatec Wallet ships (see `SUPPORTED_LOCALES` in `src/i18n.ts`).
    */
   locale?: string
-  /** Fired the first time a method is selected (either the default, or a manual tab click). */
+  /**
+   * Fired the first time a method is selected (either the default, or a manual tab click) —
+   * except `direct` while the dialog renders content: there selecting the tab only shows the
+   * "Open Biatec Wallet" button, and this fires (every time) from that button's click handler,
+   * synchronously, so the popup is opened inside the user's gesture.
+   */
   onSelectMethod: (method: BiatecMethod) => void
   onCancel: () => void
 }
@@ -83,6 +102,8 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   let locale = resolveLocale(options.locale)
   let i18n = TRANSLATIONS[locale]
   const showPicker = methods.length > 1
+  // Restored on close so keyboard users return to the control that opened the dialog.
+  const previouslyFocused = document.activeElement
   let selected = options.defaultMethod
   const states = new Map<BiatecMethod, ConnectMethodState>()
   const started = new Set<BiatecMethod>()
@@ -104,6 +125,9 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
       document.removeEventListener('keydown', onKeydown)
       overlay.classList.remove('bcd-overlay--visible')
       setTimeout(() => overlay.remove(), 160)
+      if (previouslyFocused instanceof HTMLElement && document.contains(previouslyFocused)) {
+        previouslyFocused.focus()
+      }
     },
     setState: (method, state) => {
       states.set(method, state)
@@ -117,14 +141,62 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     options.onCancel()
   }
 
+  const FOCUSABLE =
+    'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+
   function onKeydown(event: KeyboardEvent): void {
-    if (event.key === 'Escape') cancel()
+    if (event.key === 'Escape') {
+      cancel()
+      return
+    }
+    // Trap Tab inside the panel: the page behind the modal must not receive focus.
+    if (event.key === 'Tab') {
+      const focusable = Array.from(panel.querySelectorAll<HTMLElement>(FOCUSABLE)).filter(
+        (el) => el.offsetParent !== null
+      )
+      if (focusable.length === 0) return
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      const active = document.activeElement
+      if (event.shiftKey && (active === first || !panel.contains(active))) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && (active === last || !panel.contains(active))) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+  }
+
+  /** Localized text for a failed method (never the raw thrown message). */
+  function errorCopy(state: ConnectMethodState | undefined): string {
+    switch (state?.errorKind) {
+      case 'walletClosed':
+        return i18n.walletClosed
+      case 'userRejected':
+        return i18n.userRejected
+      case 'wrongNetwork':
+        return i18n.wrongNetwork
+      case 'timedOut':
+        return i18n.timedOut
+      case 'popupBlocked':
+        return i18n.popupBlocked
+      default:
+        return state?.status === 'popup-blocked' ? i18n.popupBlocked : i18n.genericError
+    }
   }
 
   /** User clicked a method tab (or it's the initial default selection). */
   function select(method: BiatecMethod, isInitial = false): void {
     selected = method
     renderMethods()
+    // renderMethods replaced the clicked tab: keep keyboard focus on the selected one.
+    if (!isInitial) methodsEl?.querySelector<HTMLElement>('.bcd-method--active')?.focus()
+    if (showContent && method === 'direct') {
+      // Never open a popup merely because a tab was highlighted: wait for the button.
+      renderContent()
+      return
+    }
     if (!started.has(method)) {
       started.add(method)
       // The initial default selection is started explicitly by the caller right after this
@@ -151,7 +223,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     <div class="bcd-body">
       <div class="bcd-sidebar">
         ${showPicker ? '<div class="bcd-methods" role="tablist"></div>' : ''}
-        <div class="bcd-locales" role="group" aria-label="Language"></div>
+        <div class="bcd-locales" role="group" aria-label="${escapeHtml(i18n.language)}"></div>
       </div>
       ${showContent ? '<div class="bcd-content"></div>' : ''}
     </div>
@@ -161,7 +233,15 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   const subtitleEl = panel.querySelector('.bcd-subtitle') as HTMLParagraphElement | null
   closeButton.onclick = cancel
   overlay.onclick = (event) => {
-    if (event.target === overlay) cancel()
+    if (event.target !== overlay) return
+    // While the Direct popup is open, clicking the page behind the dialog is how users bring
+    // the popup back to the front; refocus it instead of cancelling. Cancel stays on ✕ / Escape /
+    // the explicit Cancel button.
+    if (selected === 'direct' && states.get('direct')?.status === 'connecting') {
+      options.onSelectMethod('direct')
+      return
+    }
+    cancel()
   }
   document.addEventListener('keydown', onKeydown)
 
@@ -178,9 +258,12 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     if (subtitleEl) subtitleEl.textContent = i18n.subtitle
     closeButton.setAttribute('aria-label', i18n.cancel)
     overlay.setAttribute('aria-label', i18n.title)
+    localesEl.setAttribute('aria-label', i18n.language)
     renderMethods()
     renderLocales()
     renderContent()
+    // The re-render replaced the focused flag button: keep keyboard focus on the same flag.
+    localesEl.querySelector<HTMLElement>(`[data-locale="${next}"]`)?.focus()
   }
 
   function renderLocales(): void {
@@ -232,16 +315,63 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
     }
   }
 
+  let directPhase: 'connecting' | 'failed' | 'idle' | undefined
+
+  function renderDirectContent(state: ConnectMethodState | undefined): void {
+    if (!contentEl) return
+    const methodLabel = i18n.methodLabel.direct
+    const connecting = state?.status === 'connecting'
+    const failed = state?.status === 'popup-blocked' || state?.status === 'error'
+    // The innerHTML below destroys the focused control; remember if focus was in the panel's
+    // content (or lost to <body>) so it can be handed to the replacement button.
+    const active = document.activeElement
+    const focusWasInContent = contentEl.contains(active) || active === document.body
+    contentEl.innerHTML = `
+      <h3 class="bcd-content-title">${escapeHtml(formatMethod(i18n.connectWith, methodLabel))}</h3>
+      <div class="bcd-direct-state">
+        <div class="bcd-direct-art">${METHOD_ICON.direct}</div>
+        ${
+          connecting
+            ? `<div class="bcd-spinner bcd-spinner--small"></div><p class="bcd-hint">${escapeHtml(i18n.waitingForWallet)}</p>`
+            : failed
+              ? `<p class="bcd-error">${escapeHtml(errorCopy(state))}</p>`
+              : `<p class="bcd-hint">${i18n.methodInstructions.direct}</p>`
+        }
+      </div>
+      <button type="button" class="bcd-copy bcd-open">${escapeHtml(connecting ? i18n.showWalletWindow : i18n.openWallet)}</button>
+      ${connecting ? `<button type="button" class="bcd-text-button bcd-cancel">${escapeHtml(i18n.cancel)}</button>` : ''}
+      <p class="bcd-footnote">${escapeHtml(i18n.noWallet)}
+        <a class="bcd-link" href="${BIATEC_WALLET_URL}" target="_blank" rel="noreferrer">${escapeHtml(i18n.getItHere)}</a>
+      </p>
+    `
+    const openButton = contentEl.querySelector('.bcd-open') as HTMLButtonElement
+    // Must call straight into the adapter with no await/timer in between: this click is the
+    // user gesture that lets `window.open` succeed (while connecting it only refocuses).
+    openButton.onclick = () => options.onSelectMethod('direct')
+    const cancelButton = contentEl.querySelector<HTMLButtonElement>('.bcd-cancel')
+    if (cancelButton) cancelButton.onclick = cancel
+    // Keyboard users land on the primary action when the panel is first shown or enters
+    // idle/failed from another state, but not on a re-render (e.g. a language switch).
+    const phase = connecting ? 'connecting' : failed ? 'failed' : 'idle'
+    if (connecting ? focusWasInContent : phase !== directPhase) openButton.focus()
+    directPhase = phase
+  }
+
   function renderContent(): void {
     if (!contentEl) return
     const state = states.get(selected)
+    if (selected === 'direct') {
+      renderDirectContent(state)
+      return
+    }
+    directPhase = undefined
     const methodLabel = i18n.methodLabel[selected]
     if (!state || state.status === 'connecting') {
       contentEl.innerHTML = `<div class="bcd-content-state"><div class="bcd-spinner"></div><p class="bcd-hint">${escapeHtml(formatMethod(i18n.preparing, methodLabel))}</p></div>`
       return
     }
     if (state.status === 'error') {
-      contentEl.innerHTML = `<div class="bcd-content-state"><p class="bcd-error">${escapeHtml(state.error ?? i18n.genericError)}</p></div>`
+      contentEl.innerHTML = `<div class="bcd-content-state"><p class="bcd-error">${escapeHtml(errorCopy(state))}</p></div>`
       return
     }
     const uri = state.uri ?? ''
@@ -281,14 +411,25 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
 
   document.body.appendChild(overlay)
   requestAnimationFrame(() => overlay.classList.add('bcd-overlay--visible'))
+  // Focus can only move once the overlay is in the document: the Direct open button when Direct
+  // is shown, else the selected method tab (or the panel's first control).
+  const initialFocus =
+    panel.querySelector<HTMLElement>('.bcd-open') ??
+    panel.querySelector<HTMLElement>('.bcd-method--active') ??
+    panel.querySelector<HTMLElement>(FOCUSABLE)
+  initialFocus?.focus()
 
   return handle
 }
 
-function escapeHtml(value: string): string {
-  const div = document.createElement('div')
-  div.textContent = value
-  return div.innerHTML
+/** Escapes text for HTML content AND double/single-quoted attribute values. */
+export function escapeHtml(value: string): string {
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
 }
 
 const CLOSE_ICON = `<svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M6 6l12 12M18 6L6 18" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>`
@@ -481,6 +622,32 @@ html[data-theme='light'] .bcd-overlay {
   place-items: center;
 }
 .bcd-qr { width: 100%; height: 100%; }
+/* Same minimum height as .bcd-content-state so the dialog does not jump between idle, waiting
+   and failed states of the Direct panel. */
+.bcd-direct-state { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; min-height: 220px; width: 100%; }
+.bcd-text-button {
+  margin-top: 0.5rem;
+  padding: 0.4rem 0.75rem;
+  border: none;
+  background: transparent;
+  color: var(--bcd-muted);
+  font-size: 0.82rem;
+  cursor: pointer;
+  text-decoration: underline;
+}
+.bcd-text-button:hover { color: var(--bcd-text); }
+.bcd-direct-art {
+  width: 4.5rem;
+  height: 4.5rem;
+  padding: 1.1rem;
+  margin-bottom: 0.25rem;
+  border-radius: 20px;
+  background: var(--bcd-accent-soft);
+  color: var(--bcd-accent);
+  box-sizing: border-box;
+}
+.bcd-direct-art svg { width: 100%; height: 100%; }
+.bcd-spinner--small { width: 1.4rem; height: 1.4rem; margin-top: 0.75rem; }
 .bcd-hint { margin: 0.85rem 0 0; font-size: 0.8rem; color: var(--bcd-muted); line-height: 1.4; }
 .bcd-link { color: var(--bcd-accent); text-decoration: none; }
 .bcd-link:hover { text-decoration: underline; }

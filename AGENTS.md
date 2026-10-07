@@ -35,18 +35,22 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
 ## Layout
 
 - `src/adapter.ts` — `BiatecWalletAdapter`: single `BaseWallet` (id `biatec`) that dispatches
-  `connect`/`disconnect`/`resumeSession`/`signTransactions`/`signData` to one of two transports
+  `connect`/`disconnect`/`resumeSession`/`signTransactions`/`signData` to one of three transports
   based on the method chosen (built-in picker, or `connect({ method })`) or persisted account
   metadata.
-- `src/transports/` — the two transport implementations, plain classes (not `BaseWallet`
-  subclasses) taking a `TransportContext`: `walletconnect-transport.ts` (`WalletConnectTransport`)
-  and `liquid-transport.ts` (`LiquidTransport`). `types.ts` defines `TransportContext`,
+- `src/transports/` — the three transport implementations, plain classes (not `BaseWallet`
+  subclasses) taking a `TransportContext`: `walletconnect-transport.ts` (`WalletConnectTransport`),
+  `liquid-transport.ts` (`LiquidTransport`) and `direct-transport.ts` (`DirectTransport`). `types.ts` defines `TransportContext`,
   `BiatecAccountMetadata`, `BiatecDisplayUriInfo`.
 - `src/connect-dialog.ts` — the built-in vanilla-DOM connect UI: one window with a method
-  selector (WalletConnect / Liquid Auth) on the left and the QR/link content for the selected
-  method on the right; also the `adapter-constants.ts` values it and `adapter.ts` both need
+  selector (WalletConnect / Liquid Auth / Direct) on the left and the QR/link content (an "Open
+  Biatec Wallet" button for Direct) for the selected method on the right; also the `adapter-constants.ts` values it and `adapter.ts` both need
   without importing each other.
 - `src/index.ts` — the `biatec()` factory + public exports (no separate Liquid Auth factory).
+- `src/transports/direct-transport.ts` + `direct-validation.ts` — the third transport, `direct`
+  (popup + `postMessage`, no relay). Normative protocol: `docs/DIRECT_PROTOCOL.md` (mirror of the
+  wallet repo's `/direct` route, scholtz/wallet#192). `window.open` must stay the first synchronous
+  statement of the user-gesture path — never add an `await` before it.
 - `src/liquid/` — Liquid Auth wire protocol, transport-agnostic: `protocol.ts` (ARC-0027 CBOR
   envelope + ARC-0060 extension, deep links, base64url — mirrored in the wallet repo at
   `src/scripts/liquid/protocol.ts`, keep in sync), `signaling.ts` (socket.io + WebRTC answer
@@ -63,6 +67,7 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
   - `RELEASING.md` — the Changesets-based release pipeline.
   - `RESEARCH.md` — original research notes on use-wallet v5 and Biatec Wallet internals, sources.
   - `LIQUID_AUTH_PROTOCOL.md` — normative description of the Liquid Auth transport and message schemas.
+  - `DIRECT_PROTOCOL.md` — normative description of the Direct (popup + postMessage) transport.
 - `skill/biatec-wallet-integration/SKILL.md` — portable AI-agent instructions for integrating this
   package into a **consumer's** dApp. Shipped inside the published npm package (see `files` in
   `package.json`). Mirrored at `.claude/skills/biatec-wallet-integration/SKILL.md` for this repo's

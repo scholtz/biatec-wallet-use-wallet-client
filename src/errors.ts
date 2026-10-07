@@ -4,3 +4,34 @@ export class SessionError extends Error {
     this.name = 'SessionError'
   }
 }
+
+/**
+ * Thrown when the browser refused to open the Biatec Wallet popup (`window.open` returned
+ * `null`) — almost always because it was not called synchronously from a user gesture, or the
+ * site is blocked from opening popups. Ask the user to click again / allow popups.
+ */
+export class PopupBlockedError extends SessionError {
+  constructor(
+    message = 'The browser blocked the Biatec Wallet popup. Allow popups for this site and try again.'
+  ) {
+    super(message)
+    this.name = 'PopupBlockedError'
+  }
+}
+
+/**
+ * The wallet is on a different network than the dApp asked for (ARC-0027 error 4004). Surface
+ * a "switch network" prompt using {@link genesisHash} (what the dApp requested) and, when the
+ * wallet reported them, {@link walletGenesisHashes}.
+ */
+export class DirectNetworkMismatchError extends SessionError {
+  readonly code = 4004
+  readonly genesisHash: string
+  readonly walletGenesisHashes: string[]
+  constructor(message: string, genesisHash: string, walletGenesisHashes: string[] = []) {
+    super(message)
+    this.name = 'DirectNetworkMismatchError'
+    this.genesisHash = genesisHash
+    this.walletGenesisHashes = walletGenesisHashes
+  }
+}

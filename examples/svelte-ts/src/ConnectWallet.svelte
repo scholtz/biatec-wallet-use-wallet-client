@@ -15,13 +15,14 @@
   let connecting = $state<string | null>(null)
   let error = $state<string | null>(null)
 
-  async function handleConnect(walletId: string) {
+  async function handleConnect(walletId: string, method?: 'direct') {
     const w = wallet.wallets.find((x) => x.id === walletId)
     if (!w) return
     error = null
     connecting = walletId
     try {
-      await w.connect()
+      // Called synchronously from the click, so the Direct popup is not blocked by the browser.
+      await w.connect(method ? { method } : undefined)
     } catch (e) {
       error = e instanceof Error ? e.message : String(e)
     } finally {
@@ -59,6 +60,13 @@
         {:else}
           <button class="pill" disabled={connecting === w.id} onclick={() => handleConnect(w.id)}>
             {connecting === w.id ? 'Connecting…' : 'Connect'}
+          </button>
+          <button
+            class="ghost"
+            disabled={connecting === w.id}
+            onclick={() => handleConnect(w.id, 'direct')}
+          >
+            Connect (popup)
           </button>
         {/if}
       </li>

@@ -16,13 +16,14 @@ const { wallets, activeWallet, activeAddress } = useWallet()
 const connecting = ref<string | null>(null)
 const error = ref<string | null>(null)
 
-async function handleConnect(walletId: string) {
+async function handleConnect(walletId: string, method?: 'direct') {
   const wallet = wallets.value.find((w) => w.id === walletId)
   if (!wallet) return
   error.value = null
   connecting.value = walletId
   try {
-    await wallet.connect()
+    // Called synchronously from the click, so the Direct popup is not blocked by the browser.
+    await wallet.connect(method ? { method } : undefined)
   } catch (e) {
     error.value = e instanceof Error ? e.message : String(e)
   } finally {
@@ -58,14 +59,22 @@ async function handleConnect(walletId: string) {
           </button>
           <button class="ghost" @click="wallet.disconnect()">Disconnect</button>
         </template>
-        <button
-          v-else
-          class="pill"
-          :disabled="connecting === wallet.id"
-          @click="handleConnect(wallet.id)"
-        >
-          {{ connecting === wallet.id ? 'Connecting…' : 'Connect' }}
-        </button>
+        <template v-else>
+          <button
+            class="pill"
+            :disabled="connecting === wallet.id"
+            @click="handleConnect(wallet.id)"
+          >
+            {{ connecting === wallet.id ? 'Connecting…' : 'Connect' }}
+          </button>
+          <button
+            class="ghost"
+            :disabled="connecting === wallet.id"
+            @click="handleConnect(wallet.id, 'direct')"
+          >
+            Connect (popup)
+          </button>
+        </template>
       </li>
     </ul>
 

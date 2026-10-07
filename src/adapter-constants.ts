@@ -4,3 +4,14 @@
  */
 export const WALLET_ID = 'biatec' as const
 export const BIATEC_WALLET_URL = 'https://wallet.biatec.io'
+
+/** Path of the wallet's popup route for the `direct` transport. */
+export const DIRECT_ROUTE = '/direct'
+/** Prefix of the per-session popup window name (`<prefix>-<uuid>`; never reused). */
+export const DIRECT_WINDOW_NAME = 'biatec-wallet-direct'
+export const DIRECT_POPUP_WIDTH = 480
+export const DIRECT_POPUP_HEIGHT = 720
+/** `reference` of the handshake message the wallet popup posts once it can take a request. */
+export const DIRECT_READY_REFERENCE = 'biatec:direct:ready'
+/** Version of the Biatec Direct protocol this package speaks. */
+export const DIRECT_PROTOCOL_VERSION = 1

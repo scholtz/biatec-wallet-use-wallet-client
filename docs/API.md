@@ -42,7 +42,7 @@ import { ScopeType, SignDataError } from '@txnlab/use-wallet'
 `biatec()` registers a **single** wallet (id `biatec`) that supports both WalletConnect v2 and
 Liquid Auth (passkey-linked WebRTC) — there is no separate `biatecLiquid()` factory or
 `biatec-liquid` wallet id. Configure Liquid Auth via the nested `liquid` option, or set
-`liquid: false` to disable it and always connect over WalletConnect.
+`liquid: false` to disable it. The picker is skipped only when exactly one method is enabled: if you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`.
 
 ## `biatec(options)`
 
@@ -67,18 +67,21 @@ new WalletManager({ wallets: [biatec({ projectId: '...' })] })
 
 ## `BiatecWalletOptions`
 
-Passed straight through to the adapter constructor. Shared by both transports.
+Passed straight through to the adapter constructor. Shared by all transports.
 
-| Field            | Type                                                                 | Default                                  | Required | Notes                                                                                                                                                                                                           |
-| ---------------- | -------------------------------------------------------------------- | ---------------------------------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `projectId`      | `string`                                                             | —                                        | **yes**  | WalletConnect Cloud project id from <https://cloud.reown.com>, used by the WalletConnect transport. Throws synchronously in the constructor if missing, even if you plan to use Liquid Auth only.               |
-| `relayUrl`       | `string`                                                             | `'wss://relay.walletconnect.com'`        | no       | Override only for a self-hosted relay.                                                                                                                                                                          |
-| `metadata`       | `SignClientTypes.Metadata` (`{ name, description, url, icons }`)     | auto-detected from `document`/`location` | no       | The **dApp** metadata shown to the user inside Biatec Wallet for both transports. Unrelated to `displayMetadata`.                                                                                               |
-| `onDisplayUri`   | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | —                                        | no       | Receive the pairing/session URI (from whichever transport was chosen) to render your own QR/deep link instead of the built-in dialog. See [GETTING_STARTED.md § Custom QR UI](GETTING_STARTED.md#custom-qr-ui). |
-| `enableSignData` | `boolean`                                                            | `true`                                   | no       | Set `false` to disable `signData()` on both transports.                                                                                                                                                         |
-| `chains`         | `string[]`                                                           | `[]`                                     | no       | WalletConnect only: extra CAIP-2 ids requested as optional chains, beyond every network already configured on the `WalletManager`.                                                                              |
-| `liquid`         | `BiatecLiquidTransportOptions \| false`                              | `{}` (enabled, Biatec defaults)          | no       | Liquid Auth transport configuration, or `false` to disable it — see [`BiatecLiquidTransportOptions`](#biatecliquidtransportoptions) below.                                                                      |
-| `locale`         | `string` (BCP-47, e.g. `'sk'`, `'de-DE'`)                            | browser language, falling back to `'en'` | no       | Forces the built-in dialog's language. See [Localization](#localization) below. No effect once `onDisplayUri` replaces the dialog's content.                                                                    |
+| Field            | Type                                                                 | Default                                              | Required                               | Notes                                                                                                                                                                                                                                                   |
+| ---------------- | -------------------------------------------------------------------- | ---------------------------------------------------- | -------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `projectId`      | `string`                                                             | —                                                    | **yes**, unless `walletconnect: false` | WalletConnect Cloud project id from <https://cloud.reown.com>, used by the WalletConnect transport. Throws synchronously in the constructor if missing while WalletConnect is enabled, even if you plan to use Liquid Auth or Direct only.              |
+| `walletconnect`  | `false`                                                              | enabled                                              | no                                     | `false` disables the WalletConnect transport entirely (no SDK is loaded). The only case in which `projectId` may be omitted, e.g. `biatec({ walletconnect: false, liquid: false })` for a Direct-only dApp.                                             |
+| `direct`         | `BiatecDirectTransportOptions \| false`                              | `{}` (enabled, Biatec defaults)                      | no                                     | Direct (popup + `postMessage`) transport configuration, or `false` to disable it — see [`BiatecDirectTransportOptions`](#biatecdirecttransportoptions) below.                                                                                           |
+| `defaultMethod`  | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'walletconnect'` if enabled, else the first enabled | no                                     | Method pre-selected in the connect dialog. Throws in the constructor if that method is disabled. Tab order is always `walletconnect`, `liquid`, `direct`. When the default is `direct`, `connect()` opens the popup immediately (call it from a click). |
+| `relayUrl`       | `string`                                                             | `'wss://relay.walletconnect.com'`                    | no                                     | Override only for a self-hosted relay.                                                                                                                                                                                                                  |
+| `metadata`       | `SignClientTypes.Metadata` (`{ name, description, url, icons }`)     | auto-detected from `document`/`location`             | no                                     | The **dApp** metadata shown to the user inside Biatec Wallet for every transport. Unrelated to `displayMetadata`.                                                                                                                                       |
+| `onDisplayUri`   | `(uri: string, info: BiatecDisplayUriInfo) => void \| Promise<void>` | —                                                    | no                                     | Receive the pairing/session URI (from whichever transport was chosen) to render your own QR/deep link instead of the built-in dialog. See [GETTING_STARTED.md § Custom QR UI](GETTING_STARTED.md#custom-qr-ui).                                         |
+| `enableSignData` | `boolean`                                                            | `true`                                               | no                                     | Set `false` to disable `signData()` on every transport.                                                                                                                                                                                                 |
+| `chains`         | `string[]`                                                           | `[]`                                                 | no                                     | WalletConnect only: extra CAIP-2 ids requested as optional chains, beyond every network already configured on the `WalletManager`.                                                                                                                      |
+| `liquid`         | `BiatecLiquidTransportOptions \| false`                              | `{}` (enabled, Biatec defaults)                      | no                                     | Liquid Auth transport configuration, or `false` to disable it — see [`BiatecLiquidTransportOptions`](#biatecliquidtransportoptions) below.                                                                                                              |
+| `locale`         | `string` (BCP-47, e.g. `'sk'`, `'de-DE'`)                            | browser language, falling back to `'en'`             | no                                     | Forces the built-in dialog's language. See [Localization](#localization) below. No effect once `onDisplayUri` replaces the dialog's content.                                                                                                            |
 
 ### `BiatecLiquidTransportOptions`
 
@@ -91,6 +94,22 @@ Passed straight through to the adapter constructor. Shared by both transports.
 | `connectTimeoutMs`   | `number`                                     | `300000`                                                 | How long `connect()` waits for the wallet to pair.                                          |
 | `reconnectTimeoutMs` | `number`                                     | `30000`                                                  | How long a lazy reconnect (after a reload) waits for the wallet before failing with `4002`. |
 | `requestTimeoutMs`   | `number`                                     | `300000`                                                 | How long a signing request waits for the user's answer.                                     |
+
+### `BiatecDirectTransportOptions`
+
+Passed as `biatec({ direct: { ... } })`. Normative protocol: [DIRECT_PROTOCOL.md](DIRECT_PROTOCOL.md).
+
+| Field              | Type                                         | Default                                 | Notes                                                                                                                                                                                                                |
+| ------------------ | -------------------------------------------- | --------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `walletUrl`        | `string`                                     | `'https://wallet.biatec.io'`            | **Development only.** Must be `https:` or `http:` on `localhost`/`127.0.0.1`, no credentials. A non-default origin logs a one-time `console.warn`. The origin is pinned: messages from any other origin are ignored. |
+| `popupFeatures`    | `string`                                     | centered `popup,width=480,height=720,…` | `window.open` feature string. Must not contain `noopener`/`noreferrer` (the constructor throws), since they sever the channel.                                                                                       |
+| `metadata`         | `Partial<{ name; description; url; icons }>` | detected from the document              | dApp metadata sent in `enable`. Shown by the wallet as **unverified**; the origin is the verified identity.                                                                                                          |
+| `providerId`       | `string`                                     | random UUID                             | ARC-0027 `providerId` sent in requests. Results carry the **wallet's** provider id, which is not compared with this one.                                                                                             |
+| `connectTimeoutMs` | `number`                                     | `300000`                                | How long to wait for the wallet popup to become ready (the user may be unlocking it) and for the user to approve `connect()`. Rejects with `4002`.                                                                   |
+| `requestTimeoutMs` | `number`                                     | `300000`                                | How long a signing request waits for the user's answer. Rejects with `4002`.                                                                                                                                         |
+
+The popup's `closed` flag is polled every 500 ms: closing it rejects the pending call with `4001`.
+`enableSignData` (shared option) also applies.
 
 ### Localization
 
@@ -123,25 +142,28 @@ losing any in-progress connection state.
 
 ```ts
 interface BiatecDisplayUriInfo {
-  method: 'walletconnect' | 'liquid'
+  method: 'walletconnect' | 'liquid' | 'direct'
   requestId?: string // Liquid Auth only
   origin?: string // Liquid Auth only
 }
 ```
 
+`onDisplayUri` is never called for `direct` (there is no URI to show).
+
 ### `ConnectArgs`
 
 ```ts
 interface ConnectArgs {
-  method?: 'walletconnect' | 'liquid'
+  method?: 'walletconnect' | 'liquid' | 'direct'
 }
 ```
 
-Pass to `wallet.connect({ method: 'liquid' })` (or `'walletconnect'`) to skip the built-in
-dialog's method selector and connect with that transport directly — useful for a custom "choose
-your wallet" picker of your own. With no `method` and both transports enabled, `connect()` shows
-the built-in dialog: a method selector next to a live QR code / link for the selected method,
-WalletConnect selected by default so its QR is visible immediately. Cancelling it (✕, backdrop,
+Pass to `wallet.connect({ method: 'liquid' })` (or `'walletconnect'` / `'direct'`) to skip the
+built-in dialog's method selector and connect with that transport directly — useful for a custom
+"choose your wallet" picker of your own. A method that is disabled rejects with `SessionError`.
+With no `method` and several transports enabled, `connect()` shows the built-in dialog: a method
+selector next to a live QR code / link for the selected method (an "Open Biatec Wallet" button for
+`direct`), `defaultMethod` (WalletConnect unless configured) selected first. Cancelling it (✕, backdrop,
 Escape) rejects the returned promise.
 
 ## `BiatecWalletAdapter`
@@ -160,6 +182,7 @@ but its extra members are useful for advanced cases:
 | `supportedChainIds`                                                     | `get(): string[]`                                                       | WalletConnect transport only. Every CAIP-2 id it will request (active network first, then every network on the manager, then `options.chains`), de-duplicated.                        |
 | `sessionSupportsSignData`                                               | `get(): boolean`                                                        | WalletConnect transport only. Whether the **live** session actually advertises `algo_signData` (older wallet versions may not).                                                       |
 | `walletInfo`                                                            | `get(): HelloResult \| null`                                            | Liquid Auth transport only. What the wallet announced in the hello handshake, or `null` otherwise.                                                                                    |
+| `directWalletOrigin`                                                    | `get(): string \| null`                                                 | Direct transport only. The pinned wallet origin messages are accepted from (`'https://wallet.biatec.io'` by default), or `null` when `direct: false`.                                 |
 | `isChannelOpen`                                                         | `get(): boolean`                                                        | Liquid Auth transport only. Whether the WebRTC data channel is currently open (`isConnected` can be `true` while this is `false` after a reload — the first request re-pairs lazily). |
 | `connect(args?)`                                                        | `(args?: ConnectArgs) => Promise<WalletAccount[]>`                      | Opens a session. See [`ConnectArgs`](#connectargs) above for how `args.method` skips the built-in picker.                                                                             |
 | `disconnect()`                                                          | `() => Promise<void>`                                                   | Ends the active session (whichever transport it used) and clears stored accounts.                                                                                                     |
@@ -172,8 +195,10 @@ but its extra members are useful for advanced cases:
 | `accounts`, `activeAccount`, `activeAddress`, `isConnected`, `isActive` | —                                                                       | Standard `BaseWallet` getters; see the [use-wallet docs](https://txnlab.gitbook.io/use-wallet).                                                                                       |
 
 Every persisted account carries `metadata: BiatecAccountMetadata` (`{ method: 'walletconnect' }`
-or `{ method: 'liquid', requestId, origin }`), which `resumeSession()` reads to dispatch to the
-right transport. Errors from the Liquid Auth transport surface as `LiquidProviderError` (`code` =
+`{ method: 'liquid', requestId, origin }` or `{ method: 'direct', walletOrigin, genesisHash }`),
+which `resumeSession()` reads to dispatch to the right transport (a Direct session whose
+`walletOrigin` no longer matches the pinned wallet origin is dropped). Direct needs **no** network
+or popup to resume; each signing call opens a fresh popup. Errors from the Liquid Auth transport surface as `LiquidProviderError` (`code` =
 ARC-0027 code: `4001` rejected, `4002` timed out, `4003` unsupported, `4200` invalid input);
 `signData()` maps them to `SignDataError` like the WalletConnect transport.
 
@@ -194,6 +219,15 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
 - If `indexesToSign` is given, only those positions are eligible for signing regardless of sender;
   every other position is sent with `signers: []`.
 - Throws `SessionError` if called before `connect()`/`resumeSession()` has established a session.
+- **Direct only — supported transaction kinds.** Biatec Wallet's compact Direct popup signs only
+  payments (`pay`), asset transfers (`axfer`) and calls to **existing** applications (`appl` with
+  `appIndex != 0` and no approval/clear program). For anything else (`acfg`, `afrz`, `keyreg`,
+  `stpf`, `hb`, application creation, application program updates) the call rejects with a
+  `LiquidProviderError` `4200` (`Transaction type "<t>" is not supported by Biatec Direct.`,
+  `Creating an application is not supported by Biatec Direct.` or `Updating application programs
+is not supported by Biatec Direct.`) **before any popup opens**. The check covers every transaction of the group (also pre-signed and
+  counterparty ones), not only the positions to be signed. Use the WalletConnect method
+  for those transactions.
 
 ### `signData`
 
@@ -234,6 +268,22 @@ maps, `DEFAULT_LIQUID_ORIGIN`, `DEFAULT_ICE_SERVERS`, `LIQUID_DATA_CHANNEL`, `LI
 `LiquidProviderError`, and the message types (`SignTransactionsParams/Result`,
 `SignDataParams/Result`, `HelloParams/Result`, `LiquidStdSigData`, …). `LiquidSignalClient`
 (the answer-role signaling client) is exported too.
+
+## Direct transport
+
+Configured via the `direct` field on `BiatecWalletOptions` (see
+[`BiatecDirectTransportOptions`](#biatecdirecttransportoptions) above). Every call that opens the
+popup (`connect`, `signTransactions`, `signData`) must be made from a user gesture with no `await`
+before it. Errors: `PopupBlockedError` (browser blocked the popup), `DirectNetworkMismatchError`
+(wallet error `4004`, carries `genesisHash` and `walletGenesisHashes`), `LiquidProviderError`
+(`code` `4001` rejected / popup closed, `4002` timed out, `4003` unsupported version, `4100`
+site not connected in the wallet, `4200` malformed or tampered wallet response). `signData()` wraps every Direct failure into a `SignDataError` (ARC-0060 codes) **except** `PopupBlockedError`, which is rethrown unchanged so the UI can ask the user to allow popups and click again. Exported
+constants: `DIRECT_PROTOCOL_VERSION`, `DIRECT_READY_REFERENCE`, `DIRECT_ROUTE`,
+`DIRECT_WINDOW_NAME`; protocol types: `EnableParams`, `EnableResult`, `EnableAccount` (and
+`LiquidReference.enableRequest/enableResponse/disableRequest/disableResponse`). Protocol:
+[DIRECT_PROTOCOL.md](DIRECT_PROTOCOL.md).
+
+**Fetch everything async BEFORE the click.** An `await` (e.g. `getTransactionParams()`) between the click and `signTransactions()` can outlive the browser's user-activation window (about 1 s in Safari, or a slow node anywhere) and the popup is blocked. Load suggested params on mount / after connect / on a timer into state, build the transaction synchronously in the click handler (the shipped examples do this), and **catch `PopupBlockedError` and let the user click again** (it is not a failure of the wallet or the session).
 
 ## Constants
 
@@ -305,13 +355,21 @@ adapter doesn't know about yet to `options.chains`.
 
 ## Errors
 
-| Class           | Exported from                                                                                                                 | When                                                                                                                       |
-| --------------- | ----------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `SessionError`  | `biatec-wallet-use-wallet-client`                                                                                             | `signTransactions()` or `signData()` called before a session exists (i.e. before `connect()`/`resumeSession()` succeeded). |
-| `SignDataError` | `@txnlab/use-wallet` (generic, shared by every adapter — see [`signData`](#signdata) above for the codes this adapter throws) | `signData()` fails: user rejection, unsupported, or other error.                                                           |
+| Class                        | Exported from                                                                                                                 | When                                                                                                                                                                     |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `SessionError`               | `biatec-wallet-use-wallet-client`                                                                                             | `signTransactions()` or `signData()` called before a session exists (i.e. before `connect()`/`resumeSession()` succeeded); `connect({ method })` with a disabled method. |
+| `PopupBlockedError`          | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: the browser blocked the wallet popup (`window.open` returned `null`) — not called from a user gesture, or popups are blocked for the site.                       |
+| `DirectNetworkMismatchError` | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: the wallet is on another network (`code` `4004`); has `genesisHash` (requested) and `walletGenesisHashes`.                                                       |
+| `SignDataError`              | `@txnlab/use-wallet` (generic, shared by every adapter — see [`signData`](#signdata) above for the codes this adapter throws) | `signData()` fails: user rejection, unsupported, or other error.                                                                                                         |
 
 ```ts
 class SessionError extends Error {}
+class PopupBlockedError extends SessionError {}
+class DirectNetworkMismatchError extends SessionError {
+  code: 4004
+  genesisHash: string
+  walletGenesisHashes: string[]
+}
 class SignDataError extends Error {
   code: number
   data?: any

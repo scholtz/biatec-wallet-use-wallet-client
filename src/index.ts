@@ -15,8 +15,9 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
 
 /**
  * Factory for the Biatec Wallet adapter. A single wallet entry that supports connecting over
- * WalletConnect v2 or Liquid Auth (passkey-linked WebRTC) — both are enabled by default, and
- * `connect()` shows a built-in picker when both are available.
+ * WalletConnect v2, Liquid Auth (passkey-linked WebRTC) or Direct (the wallet in a popup, no
+ * relay) — all enabled by default, and `connect()` shows a built-in picker when several are
+ * available.
  *
  * @example
  * ```ts
@@ -28,9 +29,14 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
  * })
  * ```
  *
- * Disable Liquid Auth and always connect over WalletConnect:
+ * Disable Liquid Auth and Direct, and always connect over WalletConnect:
  * ```ts
- * biatec({ projectId: '<walletconnect-project-id>', liquid: false })
+ * biatec({ projectId: '<walletconnect-project-id>', liquid: false, direct: false })
+ * ```
+ *
+ * Direct only — no relay, no signaling server, no projectId:
+ * ```ts
+ * biatec({ walletconnect: false, liquid: false })
  * ```
  */
 export function biatec(options: BiatecFactoryOptions): WalletAdapterConfig {
@@ -46,6 +52,8 @@ export function biatec(options: BiatecFactoryOptions): WalletAdapterConfig {
 export {
   BiatecWalletAdapter,
   SessionError,
+  PopupBlockedError,
+  DirectNetworkMismatchError,
   WALLET_ID,
   SIGN_TXN_METHOD,
   SIGN_DATA_METHOD,
@@ -55,6 +63,7 @@ export {
 export type {
   BiatecWalletOptions,
   BiatecLiquidTransportOptions,
+  BiatecDirectTransportOptions,
   BiatecAccountMetadata,
   BiatecDisplayUriInfo,
   BiatecMethod,
@@ -77,6 +86,15 @@ export type { BiatecNetworkId } from './networks'
 
 export { SUPPORTED_LOCALES, DEFAULT_LOCALE, resolveLocale } from './i18n'
 export type { BiatecLocale, BiatecTranslation } from './i18n'
+
+// ---------- Biatec Direct (popup) protocol constants ------------------- //
+
+export {
+  DIRECT_PROTOCOL_VERSION,
+  DIRECT_READY_REFERENCE,
+  DIRECT_ROUTE,
+  DIRECT_WINDOW_NAME
+} from './adapter-constants'
 
 // ---------- Liquid Auth transport-level utilities -------------------- //
 // Useful for consumers building fully custom pairing UI; no adapter coupling.
@@ -103,6 +121,9 @@ export {
   toBase64Url
 } from './liquid/protocol'
 export type {
+  EnableAccount,
+  EnableParams,
+  EnableResult,
   HelloParams,
   HelloResult,
   LiquidDeepLink,

@@ -22,14 +22,17 @@ export interface TransportContext {
   getActiveNetwork: () => string
   createStdSignData: (data: string) => Promise<StdSignData>
   onDisconnect: () => void
+  /** Auth (rekey) address of `address` according to the chain, if any. Used by Direct. */
+  getAuthAddr?: (address: string) => Promise<string | undefined>
 }
 
 /** The connection method a persisted account/session used, so resume can dispatch correctly. */
-export type BiatecMethod = 'walletconnect' | 'liquid'
+export type BiatecMethod = 'walletconnect' | 'liquid' | 'direct'
 
 export type BiatecAccountMetadata =
   | { method: 'walletconnect' }
   | { method: 'liquid'; requestId: string; origin: string }
+  | { method: 'direct'; walletOrigin: string; genesisHash: string }
 
 /** Handle returned by a dialog-opening function so the caller can dismiss it. */
 export interface DialogHandle {

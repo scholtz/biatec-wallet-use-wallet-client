@@ -50,7 +50,7 @@ Run an example against your change: `pnpm build` first (examples import the buil
 
 ## Tests
 
-`BiatecWalletAdapter` (`src/adapter.ts`) is a thin dispatcher over two transports, and the test
+`BiatecWalletAdapter` (`src/adapter.ts`) is a thin dispatcher over three transports, and the test
 suites mirror that split:
 
 - `src/adapter.test.ts` — dispatch only: method picker shown/skipped, `resumeSession()` branching
@@ -60,6 +60,11 @@ suites mirror that split:
   calling `connect({ method: 'walletconnect' })` to bypass the picker.
 - `src/transports/liquid-transport.test.ts` — mocks `socket.io-client` and WebRTC globals the same
   way, calling `connect({ method: 'liquid' })`.
+- `src/transports/direct-transport.test.ts` — a fake `window` (stub popup, `message` events with
+  chosen `origin`/`source`) and fake timers; calling `connect({ method: 'direct' })`. Every
+  protocol rule in `docs/DIRECT_PROTOCOL.md` §7 has a negative test here (wrong origin, wrong
+  source, mismatched requestId/providerId, malformed payloads, tampered signed txn, blocked/closed
+  popup, timeouts) — add one for any rule you add.
 
 When adding behavior:
 

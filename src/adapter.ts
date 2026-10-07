@@ -1,13 +1,13 @@
 /**
  * Biatec Wallet adapter for @txnlab/use-wallet v5.
  *
- * A single wallet (id `biatec`) that supports two transports to the same physical wallet
+ * A single wallet (id `biatec`) that supports three transports to the same physical wallet
  * (https://wallet.biatec.io): WalletConnect v2 (ARC-0001 `algo_signTxn` / ARC-0060
- * `algo_signData` JSON-RPC) and Liquid Auth (passkey-linked WebRTC carrying the same two
- * operations over an ARC-0027 envelope). When both are available, `connect()` shows a
- * built-in dialog (method selector + live QR/link) defaulting to WalletConnect; pass
- * `connect({ method: 'liquid' })` or `connect({ method: 'walletconnect' })` to skip it.
- * See docs/ARCHITECTURE.md.
+ * `algo_signData` JSON-RPC), Liquid Auth (passkey-linked WebRTC carrying the same two
+ * operations over an ARC-0027 envelope) and Direct (the wallet in a popup, ARC-0027 over
+ * `postMessage`, no relay). When several are available, `connect()` shows a built-in dialog
+ * (method selector + live QR/link or "Open Biatec Wallet" button) defaulting to WalletConnect;
+ * pass `connect({ method })` to skip the picker. See docs/ARCHITECTURE.md.
  */
 import type algosdk from 'algosdk'
 import {
@@ -19,10 +19,16 @@ import {
   type WalletMetadata
 } from '@txnlab/use-wallet/adapter'
 import { BIATEC_WALLET_URL } from './adapter-constants'
-import { openConnectDialog, type ConnectDialogController } from './connect-dialog'
-import { SessionError } from './errors'
+import {
+  openConnectDialog,
+  type ConnectDialogController,
+  type ConnectErrorKind
+} from './connect-dialog'
+import { DirectNetworkMismatchError, PopupBlockedError, SessionError } from './errors'
+import { LiquidErrorCode, LiquidProviderError } from './liquid/protocol'
 import { ICON } from './icon'
 import type { HelloResult } from './liquid/protocol'
+import { DirectTransport, type DirectTransportOptions } from './transports/direct-transport'
 import { LiquidTransport, type LiquidTransportOptions } from './transports/liquid-transport'
 import type {
   BiatecAccountMetadata,
@@ -35,7 +41,7 @@ import {
   type WalletConnectTransportOptions
 } from './transports/walletconnect-transport'
 
-export { SessionError } from './errors'
+export { DirectNetworkMismatchError, PopupBlockedError, SessionError } from './errors'
 export { WALLET_ID, BIATEC_WALLET_URL } from './adapter-constants'
 export {
   DEFAULT_RELAY_URL,
@@ -46,22 +52,47 @@ export {
   type WireStdSigData
 } from './transports/walletconnect-transport'
 export type { LiquidTransportOptions as BiatecLiquidTransportOptions } from './transports/liquid-transport'
+export type { DirectTransportOptions as BiatecDirectTransportOptions } from './transports/direct-transport'
 export type { BiatecAccountMetadata, BiatecDisplayUriInfo, BiatecMethod } from './transports/types'
 
-export interface BiatecWalletOptions extends WalletConnectTransportOptions {
+export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions, 'projectId'> {
+  /**
+   * WalletConnect Cloud project id (https://cloud.reown.com). Required unless you pass
+   * `walletconnect: false`.
+   */
+  projectId?: string
+  /**
+   * Pass `false` to disable the WalletConnect transport entirely. This is the only case in
+   * which `projectId` may be omitted — e.g. `biatec({ walletconnect: false, liquid: false })`
+   * ships a dApp that talks to the wallet purely through the Direct popup, with no relay and no
+   * signaling server.
+   */
+  walletconnect?: false
+  /**
+   * Biatec Direct (popup + postMessage) transport configuration. Enabled by default; pass
+   * `false` to disable it. Direct must be started from a user gesture (a click handler): the
+   * wallet opens in a popup, which browsers block otherwise.
+   */
+  direct?: DirectTransportOptions | false
+  /**
+   * The method pre-selected in the connect dialog. Defaults to `'walletconnect'` when enabled,
+   * otherwise the first enabled method. Must be an enabled method.
+   */
+  defaultMethod?: BiatecMethod
   /**
    * Called with the pairing/session URI instead of showing the built-in dialog's content. Use
    * it to render your own QR code / deep link UI. `connect()` resolves once the wallet approves
    * the connection, so you can close your UI then. `info.method` tells you which transport
-   * produced the URI. The built-in method picker still appears when both transports are enabled
+   * produced the URI. The built-in method picker still appears when more than one method is enabled
    * and no `method` was given to `connect()` — this option only replaces the content step, not
    * the picker.
    */
   onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
   /**
    * Liquid Auth (passkey-linked WebRTC) transport configuration. Enabled by default with
-   * Biatec's hosted signaling service; pass `false` to disable it entirely, in which case
-   * `connect()` always uses WalletConnect and skips the method picker.
+   * Biatec's hosted signaling service; pass `false` to disable it entirely. The method
+   * picker is skipped only when exactly ONE method is enabled, so to keep the old
+   * "always WalletConnect" behaviour also pass `direct: false`.
    */
   liquid?: LiquidTransportOptions | false
   /**
@@ -78,40 +109,95 @@ export interface ConnectArgs {
   method?: BiatecMethod
 }
 
+/** Maps a failed connect attempt to the localized copy the dialog shows (raw text is only logged). */
+export function classifyConnectError(error: unknown): ConnectErrorKind | undefined {
+  if (error instanceof PopupBlockedError) return 'popupBlocked'
+  if (error instanceof DirectNetworkMismatchError) return 'wrongNetwork'
+  if (error instanceof LiquidProviderError) {
+    if (error.code === LiquidErrorCode.networkNotSupported) return 'wrongNetwork'
+    if (error.code === LiquidErrorCode.timedOut) return 'timedOut'
+    if (error.code === LiquidErrorCode.cancelled) {
+      return /closed/i.test(error.message) ? 'walletClosed' : 'userRejected'
+    }
+  }
+  // WalletConnect rejections are plain `{ code, message }` objects (5000 = user rejected, 4001
+  // = EIP-1193 style rejection) or Errors whose message says so.
+  const code =
+    typeof error === 'object' && error !== null && 'code' in error
+      ? (error as { code: unknown }).code
+      : undefined
+  const text =
+    error instanceof Error
+      ? error.message
+      : String((error as { message?: unknown } | null)?.message ?? '')
+  if (code === 5000 || code === 4001 || /user rejected|rejected/i.test(text)) return 'userRejected'
+  return undefined
+}
+
+/** What the three transports have in common once connected. */
+type SigningTransport = Pick<WalletConnectTransport, 'signTransactions' | 'signData' | 'disconnect'>
+
 export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
-  private readonly walletConnect: WalletConnectTransport
+  private readonly walletConnect: WalletConnectTransport | null
   private readonly liquid: LiquidTransport | null
+  private readonly direct: DirectTransport | null
   private readonly userOnDisplayUri: BiatecWalletOptions['onDisplayUri']
   private readonly locale: string | undefined
+  private readonly enabledMethods: BiatecMethod[]
+  private readonly defaultMethod: BiatecMethod
   private activeMethod: BiatecMethod | null = null
 
   constructor(params: AdapterConstructorParams<BiatecWalletOptions>) {
     super(params)
 
-    if (!this.options?.projectId) {
-      this.logger.error('Missing required option: projectId')
-      throw new Error('Missing required option: projectId')
-    }
-
     const {
       onDisplayUri,
       liquid,
+      direct,
+      walletconnect,
+      defaultMethod,
       locale,
+      projectId,
       enableSignData = true,
       ...walletConnectOptions
-    } = this.options
+    } = this.options ?? {}
+
+    const walletConnectEnabled = walletconnect !== false
+    if (walletConnectEnabled && !projectId) {
+      this.logger.error('Missing required option: projectId')
+      throw new Error('Missing required option: projectId')
+    }
 
     this.userOnDisplayUri = onDisplayUri
     this.locale = locale
     this.canSignData = enableSignData
 
     const ctx = this.buildTransportContext()
-    this.walletConnect = new WalletConnectTransport(ctx, {
-      ...walletConnectOptions,
-      enableSignData
-    })
+    this.walletConnect =
+      walletConnectEnabled && projectId
+        ? new WalletConnectTransport(ctx, { ...walletConnectOptions, projectId, enableSignData })
+        : null
     this.liquid =
       liquid === false ? null : new LiquidTransport(ctx, { enableSignData, ...(liquid ?? {}) })
+    this.direct =
+      direct === false ? null : new DirectTransport(ctx, { enableSignData, ...(direct ?? {}) })
+
+    const enabled: BiatecMethod[] = []
+    if (this.walletConnect) enabled.push('walletconnect')
+    if (this.liquid) enabled.push('liquid')
+    if (this.direct) enabled.push('direct')
+    this.enabledMethods = enabled
+    if (enabled.length === 0) {
+      this.logger.error('No connection method enabled')
+      throw new Error(
+        'At least one connection method (walletconnect, liquid, direct) must be enabled'
+      )
+    }
+    if (defaultMethod && !enabled.includes(defaultMethod)) {
+      this.logger.error(`defaultMethod "${defaultMethod}" is not enabled`)
+      throw new Error(`defaultMethod "${defaultMethod}" is not an enabled connection method`)
+    }
+    this.defaultMethod = defaultMethod ?? enabled[0]
   }
 
   static defaultMetadata: WalletMetadata = {
@@ -128,7 +214,15 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       getActiveNetworkConfig: () => this.activeNetworkConfig,
       getActiveNetwork: () => this.activeNetwork,
       createStdSignData: this.createStdSignData,
-      onDisconnect: this.onDisconnect
+      onDisconnect: this.onDisconnect,
+      getAuthAddr: async (address) => {
+        const info = await this.getAlgodClient()
+          .accountInformation(address)
+          // `authAddr` is still returned; skip the (possibly huge) asset/app lists.
+          .exclude('all')
+          .do()
+        return info.authAddr?.toString()
+      }
     }
   }
 
@@ -136,17 +230,17 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
 
   /** CAIP-2 chain id of the currently active network (WalletConnect transport). */
   public get activeChainId(): string {
-    return this.walletConnect.activeChainId
+    return this.walletConnect?.activeChainId ?? ''
   }
 
   /** Every CAIP-2 chain id the WalletConnect transport would request (active chain first). */
   public get supportedChainIds(): string[] {
-    return this.walletConnect.supportedChainIds
+    return this.walletConnect?.supportedChainIds ?? []
   }
 
   /** Whether the live WalletConnect session advertises `algo_signData`. */
   public get sessionSupportsSignData(): boolean {
-    return this.walletConnect.sessionSupportsSignData
+    return this.walletConnect?.sessionSupportsSignData ?? false
   }
 
   // ---------- Liquid Auth-specific accessors -------------------------- //
@@ -161,10 +255,25 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     return this.liquid?.isChannelOpen ?? false
   }
 
+  // ---------- Direct-specific accessors -------------------------------- //
+
+  /** The pinned origin of the wallet the Direct (popup) transport talks to; `null` if disabled. */
+  public get directWalletOrigin(): string | null {
+    return this.direct?.origin ?? null
+  }
+
   // ---------- Transport dispatch helpers ------------------------------ //
 
-  private getTransport(method: BiatecMethod): WalletConnectTransport | LiquidTransport {
-    return method === 'liquid' && this.liquid ? this.liquid : this.walletConnect
+  private getTransport(method: BiatecMethod): SigningTransport {
+    const transport =
+      method === 'liquid' ? this.liquid : method === 'direct' ? this.direct : this.walletConnect
+    if (!transport) throw new SessionError(`Connection method "${method}" is not enabled`)
+    return transport
+  }
+
+  /** The transport of the live session; WalletConnect for legacy/untagged sessions. */
+  private activeTransport(): SigningTransport {
+    return this.getTransport(this.activeMethod ?? 'walletconnect')
   }
 
   private makeOnDisplayUri(
@@ -182,6 +291,11 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     }
   }
 
+  /**
+   * Starts `method`'s connect(). Deliberately not `async` and with no `await` before the
+   * transport call, so for `direct` the popup is opened synchronously within whatever user
+   * gesture led here.
+   */
   private startTransport(
     method: BiatecMethod,
     onDisplayUri: (
@@ -190,21 +304,31 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     ) => void | Promise<void>,
     signal?: AbortSignal
   ): Promise<WalletAccount[]> {
-    return method === 'liquid' && this.liquid
-      ? this.liquid.connect({ onDisplayUri, ...(signal ? { signal } : {}) })
-      : this.walletConnect.connect({ onDisplayUri, ...(signal ? { signal } : {}) })
+    const abort = signal ? { signal } : {}
+    if (method === 'direct') {
+      if (!this.direct) return Promise.reject(new SessionError('Direct is not enabled'))
+      return this.direct.connect(abort)
+    }
+    if (method === 'liquid') {
+      if (!this.liquid) return Promise.reject(new SessionError('Liquid Auth is not enabled'))
+      return this.liquid.connect({ onDisplayUri, ...abort })
+    }
+    if (!this.walletConnect) {
+      return Promise.reject(new SessionError('WalletConnect is not enabled'))
+    }
+    return this.walletConnect.connect({ onDisplayUri, ...abort })
   }
 
   // ---------- Public: session lifecycle ------------------------------ //
 
   public connect = async (args?: ConnectArgs): Promise<WalletAccount[]> => {
     if (args?.method) {
+      if (!this.enabledMethods.includes(args.method)) {
+        throw new SessionError(`Connection method "${args.method}" is not enabled`)
+      }
       return this.connectWithDialog([args.method], args.method)
     }
-    const availableMethods: BiatecMethod[] = this.liquid
-      ? ['walletconnect', 'liquid']
-      : ['walletconnect']
-    return this.connectWithDialog(availableMethods, 'walletconnect')
+    return this.connectWithDialog(this.enabledMethods, this.defaultMethod)
   }
 
   private connectWithDialog(
@@ -218,7 +342,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     if (methods.length === 1 && !showContent) {
       return this.startTransport(defaultMethod, this.makeOnDisplayUri(defaultMethod)).then(
         (accounts) => {
-          this.activeMethod = defaultMethod === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
+          this.activeMethod = defaultMethod
           return accounts
         }
       )
@@ -228,14 +352,23 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       let settled = false
       const started = new Set<BiatecMethod>()
       const failed = new Set<BiatecMethod>()
+      /** Methods the user explicitly picked in the dialog (as opposed to the pre-selected default). */
+      const picked = new Set<BiatecMethod>()
       const controller = new AbortController()
 
+      // Everything from here to `attempt(defaultMethod)` below is synchronous (no `await`), so
+      // when `defaultMethod` is `direct` its popup opens inside the caller's user gesture.
       const dialog = openConnectDialog({
         methods,
         defaultMethod,
         showContent,
         ...(this.locale ? { locale: this.locale } : {}),
-        onSelectMethod: (method) => attempt(method),
+        // For `direct` with dialog content this is the "Open Biatec Wallet" button's click
+        // handler, so `attempt` -> `window.open` runs synchronously inside that click.
+        onSelectMethod: (method) => {
+          picked.add(method)
+          attempt(method)
+        },
         onCancel: () => {
           if (settled) return
           settled = true
@@ -245,7 +378,18 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       })
 
       const attempt = (method: BiatecMethod): void => {
-        if (settled || started.has(method)) return
+        if (settled) return
+        if (method === 'direct') {
+          // The popup can be (re)opened by the user repeatedly: refocus a live one, otherwise
+          // start over after a blocked/closed attempt.
+          if (this.direct?.isBusy) {
+            this.direct.focusPopup()
+            return
+          }
+          failed.delete(method)
+        } else if (started.has(method)) {
+          return
+        }
         started.add(method)
         if (showContent) dialog.setState(method, { status: 'connecting' })
 
@@ -258,15 +402,45 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
               return
             }
             settled = true
-            this.activeMethod = method === 'liquid' && this.liquid ? 'liquid' : 'walletconnect'
+            this.activeMethod = method
             dialog.close()
+            // Abort every losing attempt (WalletConnect/Liquid pairings still pending, a Direct
+            // popup still open); a loser that completes late can no longer write accounts.
+            controller.abort()
             resolve(accounts)
           })
           .catch((error: unknown) => {
             if (settled) return
-            failed.add(method)
             const message = error instanceof Error ? error.message : String(error)
-            if (showContent) dialog.setState(method, { status: 'error', error: message })
+            const errorKind = classifyConnectError(error)
+            this.logger.warn(`Connection method "${method}" failed: ${message}`)
+            if (showContent && error instanceof PopupBlockedError) {
+              // Not a failure of the method: the dialog stays open so the user can click again.
+              dialog.setState(method, {
+                status: 'popup-blocked',
+                error: message,
+                errorKind: 'popupBlocked'
+              })
+              return
+            }
+            // Picker-only mode (consumer renders its own UI): the dialog closed when the user
+            // picked Direct, so there is nothing left to retry from — the user's chosen method
+            // failed, report it now instead of waiting for the other pairings to expire.
+            if (!showContent && method === 'direct' && picked.has(method)) {
+              settled = true
+              controller.abort()
+              dialog.close()
+              reject(error)
+              return
+            }
+            failed.add(method)
+            if (showContent) {
+              dialog.setState(method, {
+                status: 'error',
+                error: message,
+                ...(errorKind ? { errorKind } : {})
+              })
+            }
             if (failed.size === methods.length) {
               settled = true
               dialog.close()
@@ -281,10 +455,13 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
 
   public disconnect = async (): Promise<void> => {
     this.onDisconnect()
-    if (this.activeMethod === 'liquid' && this.liquid) {
-      await this.liquid.disconnect()
+    // A Direct popup that is still open (e.g. connecting) must never outlive a disconnect.
+    this.direct?.cancelPending()
+    const method = this.activeMethod
+    if (method === 'liquid' || method === 'direct') {
+      await this.getTransport(method).disconnect()
     } else {
-      await this.walletConnect.disconnect()
+      await this.walletConnect?.disconnect()
     }
     this.activeMethod = null
   }
@@ -319,6 +496,21 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       return
     }
 
+    if (metadata?.method === 'direct') {
+      if (!this.direct) {
+        this.logger.warn('Persisted session used Biatec Direct, but it is disabled; disconnecting')
+        this.onDisconnect()
+        return
+      }
+      if (await this.direct.resume(metadata)) this.activeMethod = 'direct'
+      return
+    }
+
+    if (!this.walletConnect) {
+      this.logger.warn('Persisted session used WalletConnect, but it is disabled; disconnecting')
+      this.onDisconnect()
+      return
+    }
     this.activeMethod = 'walletconnect'
     await this.walletConnect.resume()
   }
@@ -329,10 +521,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     txnGroup: T | T[],
     indexesToSign?: number[]
   ): Promise<(Uint8Array | null)[]> => {
-    if (this.activeMethod === 'liquid' && this.liquid) {
-      return this.liquid.signTransactions(txnGroup, indexesToSign)
-    }
-    return this.walletConnect.signTransactions(txnGroup, indexesToSign)
+    return this.activeTransport().signTransactions(txnGroup, indexesToSign)
   }
 
   // ---------- Public: data signing (ARC-0060) -------------------------- //
@@ -341,9 +530,6 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     data: string,
     metadata: StdSignMetadata
   ): Promise<StdSignDataResponse> => {
-    if (this.activeMethod === 'liquid' && this.liquid) {
-      return this.liquid.signData(data, metadata)
-    }
-    return this.walletConnect.signData(data, metadata)
+    return this.activeTransport().signData(data, metadata)
   }
 }

@@ -19,8 +19,8 @@ choice of wallets, add more factories from their own `@txnlab/use-wallet-*` pack
 the main README.
 
 None of them set `onDisplayUri`, so `connect()` shows the adapter's own built-in dialog — one
-window with a WalletConnect/Liquid Auth method selector on one side and a live QR code plus
-"Copy link" button on the other, themed to match the page's light/dark mode. Only reach for
+window with a WalletConnect/Liquid Auth/Direct method selector on one side and a live QR code plus
+"Copy link" button (or, for Direct, an "Open Biatec Wallet" button) on the other, themed to match the page's light/dark mode. Only reach for
 `onDisplayUri` if you need to replace that UI with something fully custom — see
 [docs/API.md](../docs/API.md).
 
@@ -69,3 +69,7 @@ None of the example code imports anything Biatec-specific beyond the `biatec()` 
 the `BIATEC_EXTRA_NETWORKS` constant — everything else is standard `@txnlab/use-wallet` (or its
 `-react`/`-vue`/`-solid`/`-svelte` binding) API, so it transfers directly to a dApp that also
 supports Pera, Defly, Lute, etc.
+
+Every example also has a **Connect (popup)** button that calls `wallet.connect({ method: 'direct' })`
+straight from the click handler — the Biatec Direct transport opens the wallet in a popup, and
+browsers only allow that synchronously inside a user gesture (no `await` before the call).

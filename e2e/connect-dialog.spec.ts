@@ -32,7 +32,7 @@ test('clicking Connect opens the built-in dialog with WalletConnect selected and
   // selected by default, and that method's content (spinner, then QR/link) on the right —
   // never a second, separate dialog.
   const methods = page.locator('.bcd-method')
-  await expect(methods).toHaveCount(2)
+  await expect(methods).toHaveCount(3)
   await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
   await expect(panel.locator('.bcd-content')).toBeVisible()
   await expect(panel.locator('.bcd-content-state, .bcd-qr-tile')).toBeVisible()
@@ -69,4 +69,49 @@ test('cancelling the dialog closes it and leaves the app usable', async ({ page 
 
   // The app should still be responsive — a failed/cancelled connect() must not wedge the UI.
   await expect(page.locator('#connect')).toBeVisible()
+})
+
+test('pressing Enter on "Open Biatec Wallet" keeps keyboard focus inside the dialog', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await page.click('[data-method="direct"]')
+  await expect(page.locator('.bcd-open')).toBeFocused()
+  await page.keyboard.press('Enter')
+  // The panel re-renders into its "connecting" state; focus must land on the new primary button.
+  await expect(page.locator('.bcd-open')).toBeFocused()
+  expect(await page.evaluate(() => !!document.activeElement?.closest('.bcd-panel'))).toBe(true)
+})
+
+test('Escape closes the dialog and leaves the app usable', async ({ page }) => {
+  await page.click('#connect')
+  await expect(page.locator('.bcd-panel')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.bcd-panel')).toHaveCount(0)
+  await expect(page.locator('#connect')).toBeVisible()
+  // Focus goes back to the control that opened the dialog.
+  await expect(page.locator('#connect')).toBeFocused()
+})
+
+test('Tab from the last control wraps to the first, Shift+Tab from the first to the last', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await expect(page.locator('.bcd-panel')).toBeVisible()
+  const ids = await page.evaluate(() => {
+    const panel = document.querySelector('.bcd-panel') as HTMLElement
+    const els = Array.from(
+      panel.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), [href], input:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      )
+    ).filter((el) => el.offsetParent !== null)
+    els.forEach((el, i) => el.setAttribute('data-e2e-order', String(i)))
+    return els.length
+  })
+  expect(ids).toBeGreaterThan(2)
+  await page.focus(`[data-e2e-order="${ids - 1}"]`)
+  await page.keyboard.press('Tab')
+  await expect(page.locator('[data-e2e-order="0"]')).toBeFocused()
+  await page.keyboard.press('Shift+Tab')
+  await expect(page.locator(`[data-e2e-order="${ids - 1}"]`)).toBeFocused()
 })

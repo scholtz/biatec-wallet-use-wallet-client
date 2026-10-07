@@ -36,6 +36,10 @@ export const DEFAULT_ICE_SERVERS: RTCIceServer[] = [
 export const LiquidReference = {
   helloRequest: 'biatec:hello:request',
   helloResponse: 'biatec:hello:response',
+  enableRequest: 'arc0027:enable:request',
+  enableResponse: 'arc0027:enable:response',
+  disableRequest: 'arc0027:disable:request',
+  disableResponse: 'arc0027:disable:response',
   signTransactionsRequest: 'arc0027:sign_transactions:request',
   signTransactionsResponse: 'arc0027:sign_transactions:response',
   signDataRequest: 'arc0060:sign_data:request',
@@ -94,6 +98,8 @@ export interface LiquidWalletTransaction {
 
 export interface SignTransactionsParams {
   providerId: string
+  /** Base64 genesis hash of the target network. Sent by the `direct` transport. */
+  genesisHash?: string
   txns: LiquidWalletTransaction[]
 }
 
@@ -121,6 +127,8 @@ export interface LiquidStdSigData {
 
 export interface SignDataParams {
   providerId: string
+  /** Base64 genesis hash of the target network. Sent by the `direct` transport. */
+  genesisHash?: string
   items: LiquidStdSigData[]
 }
 
@@ -148,6 +156,24 @@ export interface HelloResult {
   name?: string
   version?: string
   methods?: string[]
+}
+
+/** ARC-0027 `enable` request params (used by the `direct` popup transport). */
+export interface EnableParams {
+  providerId: string
+  genesisHash: string
+  metadata: LiquidPeerMetadata
+}
+
+export interface EnableAccount {
+  address: string
+  name?: string
+}
+
+export interface EnableResult {
+  providerId: string
+  genesisHash: string
+  accounts: EnableAccount[]
 }
 
 export class LiquidProviderError extends Error {

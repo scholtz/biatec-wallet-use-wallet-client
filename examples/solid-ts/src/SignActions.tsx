@@ -1,6 +1,6 @@
 import algosdk from 'algosdk'
 import { ScopeType, useWallet } from '@txnlab/use-wallet-solid'
-import { createSignal, Show, type JSX } from 'solid-js'
+import { createSignal, onCleanup, Show, type JSX } from 'solid-js'
 
 /**
  * Demonstrates the two things a connected wallet can do through use-wallet:
@@ -14,12 +14,30 @@ export function SignActions() {
 
   const append = (line: string) => setLog((prev) => [...prev, line])
 
+  // Suggested params are fetched BEFORE the click (and refreshed on a timer), so the click handler
+  // can build the transaction and call signTransactions with NO `await` in between: the Biatec
+  // Direct popup must be opened inside the user's gesture or the browser blocks it.
+  let cachedParams: algosdk.SuggestedParams | null = null
+  const refresh = () =>
+    algodClient()
+      .getTransactionParams()
+      .do()
+      .then((params) => (cachedParams = params))
+      .catch(() => undefined)
+  void refresh()
+  const timer = setInterval(refresh, 20_000)
+  onCleanup(() => clearInterval(timer))
+
   const handleSignTransaction = async () => {
     const address = activeAddress()
     if (!address) return
     setBusy(true)
     try {
-      const suggestedParams = await algodClient().getTransactionParams().do()
+      const suggestedParams = cachedParams
+      if (!suggestedParams) {
+        append('Suggested params not loaded yet; click again in a moment.')
+        return
+      }
       // A 0 ALGO self-payment: safe to sign repeatedly, never actually sent.
       const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
         sender: address,
@@ -35,7 +53,11 @@ export function SignActions() {
           : 'Wallet declined to sign this transaction.'
       )
     } catch (e) {
-      append(`Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`)
+      append(
+        e instanceof Error && e.name === 'PopupBlockedError'
+          ? 'Popup blocked: allow popups for this site, then click again.'
+          : `Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`
+      )
     } finally {
       setBusy(false)
     }

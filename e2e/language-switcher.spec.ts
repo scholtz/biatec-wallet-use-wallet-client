@@ -29,7 +29,7 @@ test('shows one flag per supported language and switches live without closing', 
   await page.click('[data-locale="sk"]')
   await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'sk')
   await expect(page.locator('.bcd-title')).toHaveText('Pripojiť Biatec Wallet')
-  await expect(page.locator('.bcd-subtitle')).toHaveText('Vyberte spôsob a naskenujte kód')
+  await expect(page.locator('.bcd-subtitle')).toHaveText('Vyberte, ako sa pripojiť')
   // The dialog must stay open and keep its state — switching language only re-renders text.
   await expect(panel).toBeVisible()
   await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
@@ -46,4 +46,19 @@ test('the language switcher survives switching connection methods', async ({ pag
   // selector's own re-render.
   await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'cs')
   await expect(page.locator('.bcd-locale')).toHaveCount(10)
+})
+
+test('a language switch keeps keyboard focus on the chosen flag, not on the Direct open button', async ({
+  page
+}) => {
+  await page.click('#connect')
+  await page.click('[data-method="direct"]')
+  await expect(page.locator('.bcd-open')).toBeFocused()
+
+  // Move focus to a locale flag and switch language: the re-render must leave focus alone.
+  await page.focus('[data-locale="cs"]')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('.bcd-locale--active')).toHaveAttribute('data-locale', 'cs')
+  await expect(page.locator('.bcd-open')).not.toBeFocused()
+  await expect(page.locator('[data-locale="cs"]')).toBeFocused()
 })

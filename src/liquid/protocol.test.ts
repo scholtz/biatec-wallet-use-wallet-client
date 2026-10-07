@@ -87,3 +87,27 @@ describe('message envelope', () => {
     await expect(decodeLiquidMessage('AAAA')).rejects.toThrow()
   })
 })
+
+describe('ARC-0027 enable / disable references (Biatec Direct)', () => {
+  it('has the ARC-0027 enable and disable reference names', () => {
+    expect(LiquidReference.enableRequest).toBe('arc0027:enable:request')
+    expect(LiquidReference.enableResponse).toBe('arc0027:enable:response')
+    expect(LiquidReference.disableRequest).toBe('arc0027:disable:request')
+    expect(LiquidReference.disableResponse).toBe('arc0027:disable:response')
+  })
+
+  it('builds an enable request and a matching response with genesisHash and accounts', () => {
+    const request = buildRequest(LiquidReference.enableRequest, {
+      providerId: 'p',
+      genesisHash: 'g',
+      metadata: { name: 'n', description: '', url: 'https://x', icons: [] }
+    })
+    const response = buildResponse(request, LiquidReference.enableResponse, {
+      providerId: 'p',
+      genesisHash: 'g',
+      accounts: [{ address: 'A', name: 'main' }]
+    })
+    expect(response.requestId).toBe(request.id)
+    expect(isLiquidResponse(response)).toBe(true)
+  })
+})

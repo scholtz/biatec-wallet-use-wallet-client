@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import algosdk from 'algosdk'
 import { ScopeType, useWallet } from '@txnlab/use-wallet-vue'
-import { ref } from 'vue'
+import { onBeforeUnmount, ref } from 'vue'
 
 /**
  * Demonstrates the two things a connected wallet can do through use-wallet:
@@ -16,11 +16,29 @@ function append(line: string) {
   log.value = [...log.value, line]
 }
 
+// Suggested params are fetched BEFORE the click (and refreshed on a timer), so the click handler
+// can build the transaction and call signTransactions with NO `await` in between: the Biatec
+// Direct popup must be opened inside the user's gesture or the browser blocks it.
+let cachedParams: algosdk.SuggestedParams | null = null
+const refresh = () =>
+  algodClient.value
+    .getTransactionParams()
+    .do()
+    .then((params) => (cachedParams = params))
+    .catch(() => undefined)
+void refresh()
+const timer = setInterval(refresh, 20_000)
+onBeforeUnmount(() => clearInterval(timer))
+
 async function handleSignTransaction() {
   if (!activeAddress.value) return
   busy.value = true
   try {
-    const suggestedParams = await algodClient.value.getTransactionParams().do()
+    const suggestedParams = cachedParams
+    if (!suggestedParams) {
+      append('Suggested params not loaded yet; click again in a moment.')
+      return
+    }
     // A 0 ALGO self-payment: safe to sign repeatedly, never actually sent.
     const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
       sender: activeAddress.value,
@@ -36,7 +54,11 @@ async function handleSignTransaction() {
         : 'Wallet declined to sign this transaction.'
     )
   } catch (e) {
-    append(`Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`)
+    append(
+      e instanceof Error && e.name === 'PopupBlockedError'
+        ? 'Popup blocked: allow popups for this site, then click again.'
+        : `Sign transaction failed: ${e instanceof Error ? e.message : String(e)}`
+    )
   } finally {
     busy.value = false
   }

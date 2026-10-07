@@ -149,6 +149,10 @@ export class LiquidTransport {
     try {
       await handlers.onDisplayUri(uri, { requestId, origin: this.origin })
       const session = await Promise.race([pairing, cancelled])
+      // Aborted while pairing completed: never write accounts for a lost attempt.
+      if (handlers.signal?.aborted) {
+        throw new LiquidProviderError('Pairing cancelled', LiquidErrorCode.cancelled)
+      }
       this.attachSession(session, requestId)
       const accounts = this.storeAccounts(session.wallet, requestId)
       await this.hello()
