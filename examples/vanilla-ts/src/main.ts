@@ -2,11 +2,11 @@ import algosdk from 'algosdk'
 import { NetworkConfigBuilder, ScopeType, WalletManager } from '@txnlab/use-wallet'
 import { biatec, BIATEC_EXTRA_NETWORKS } from 'biatec-wallet-use-wallet-client'
 
+// OPTIONAL. Without a WalletConnect project id only Biatec Direct and Liquid Auth are offered.
 // Get one at https://cloud.reown.com and put it in examples/vanilla-ts/.env as VITE_WC_PROJECT_ID
+// to also offer WalletConnect (needed for a wallet on another device with post-quantum, Ledger or
+// multisig accounts).
 const projectId = import.meta.env.VITE_WC_PROJECT_ID as string | undefined
-if (!projectId) {
-  throw new Error('Set VITE_WC_PROJECT_ID in examples/vanilla-ts/.env')
-}
 
 const networks = new NetworkConfigBuilder()
   .addNetwork('voimain', BIATEC_EXTRA_NETWORKS.voimain)
@@ -43,7 +43,7 @@ applyTheme(currentTheme())
 themeToggle.onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark')
 
 // No `onDisplayUri` here, so `connect()` shows the adapter's own built-in dialog: one window
-// with a method selector (Biatec Direct / WalletConnect / Liquid Auth) on the left and the content for whichever
+// with a method selector (Biatec Direct / Liquid Auth, plus WalletConnect when a project id is set) on the left and the content for whichever
 // method is selected on the right — see src/connect-dialog.ts in the adapter package.
 // Only for local/e2e wallet development: point the Direct popup at another wallet origin.
 // Leave VITE_DIRECT_WALLET_URL unset to use https://wallet.biatec.io.
@@ -51,7 +51,10 @@ const directWalletUrl = import.meta.env.VITE_DIRECT_WALLET_URL as string | undef
 
 const manager = new WalletManager({
   wallets: [
-    biatec({ projectId, ...(directWalletUrl ? { direct: { walletUrl: directWalletUrl } } : {}) })
+    biatec({
+      ...(projectId ? { projectId } : {}),
+      ...(directWalletUrl ? { direct: { walletUrl: directWalletUrl } } : {})
+    })
   ],
   networks,
   defaultNetwork: 'testnet',

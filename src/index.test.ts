@@ -55,6 +55,11 @@ describe('biatec factory', () => {
     )
   })
 
+  it('can be called without any options (no projectId)', () => {
+    expect(biatec().options).toEqual({})
+    expect(biatec({}).id).toBe('biatec')
+  })
+
   it('passes the direct and walletconnect options through, without requiring a projectId', () => {
     expect(biatec({ walletconnect: false, liquid: false }).options).toEqual({
       walletconnect: false,

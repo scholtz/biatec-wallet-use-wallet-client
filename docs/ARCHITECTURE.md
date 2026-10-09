@@ -20,7 +20,7 @@ multi-chain session behavior described below. `BiatecWalletAdapter` reimplements
 transaction-signing flow (same wire format, same helper functions from `@txnlab/use-wallet/adapter`)
 and adds `signData()` and eager multi-chain negotiation on top.
 
-## One wallet, three transports
+## One wallet, up to three transports
 
 `BiatecWalletAdapter` is a single `BaseWallet` subclass (id `biatec`) that owns up to three transport
 implementations — plain classes, not separate `BaseWallet`s — and dispatches to whichever one a
@@ -34,7 +34,10 @@ session is using:
   described in [Direct transport](#direct-transport); response validators live in
   `src/transports/direct-validation.ts`.
 
-Each transport can be switched off (`walletconnect: false`, `liquid: false`, `direct: false`);
+`WalletConnectTransport` is only constructed when a non-empty `projectId` is given (and
+`walletconnect` is not `false`); the default `biatec()` therefore owns just the Direct and Liquid
+transports. Each transport can be switched off (`walletconnect: false`, `liquid: false`,
+`direct: false`); the constructor throws only if none at all is enabled;
 the adapter keeps a nullable field per transport and dispatches through `getTransport(method)`.
 
 Every transport receives a `TransportContext` (`src/transports/types.ts`) built once in the
@@ -87,7 +90,9 @@ Every persisted `WalletAccount` is tagged with `BiatecAccountMetadata` — `{ me
 genesisHash }` — so `resumeSession()` can read
 which transport a previous session used and dispatch to the matching transport's own resume
 logic without guessing. Accounts with no `method` tag (from a pre-merge persisted session) fall
-back to WalletConnect.
+back to WalletConnect. If WalletConnect is not enabled (for example the dApp dropped its
+`projectId`), `resumeSession()` logs a warning and disconnects that persisted session cleanly
+instead of throwing, exactly as it does for a disabled Liquid or Direct.
 
 ## WalletConnect transport session lifecycle
 

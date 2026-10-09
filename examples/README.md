@@ -37,28 +37,30 @@ window with a Direct/WalletConnect/Liquid Auth method selector on one side and a
    pnpm build
    ```
 
-2. Get a free WalletConnect Cloud project id at <https://cloud.reown.com>. Every example reads it
-   from an env var.
+2. _(Optional)_ Get a free WalletConnect Cloud project id at <https://cloud.reown.com>. Every
+   example reads it from `VITE_WC_PROJECT_ID`. Without it the examples offer only **Biatec
+   Direct** and **Liquid Auth**; with it they also offer **WalletConnect**, currently the only way
+   to reach a wallet on another device for post-quantum, Ledger and multisig accounts.
 
 ## Run an example
 
 ```bash
 cd examples/react-ts        # or vanilla-ts, vue-ts, solid-ts, svelte-ts
 cp .env.example .env
-# edit .env and set VITE_WC_PROJECT_ID
+# optional: edit .env and set VITE_WC_PROJECT_ID to also enable WalletConnect
 pnpm install
 pnpm dev
 ```
 
-Open the printed local URL, click **Connect**, and approve the WalletConnect pairing in
+Open the printed local URL, click **Connect**, and approve the connection in
 [Biatec Wallet](https://wallet.biatec.io) (or the Biatec mobile/extension app once available).
-Biatec Wallet does not require its own project id — only the dApp side does, since the dApp is the
-WalletConnect client that initiates the session.
+Biatec Wallet does not require its own project id; only the dApp side can have one, and only for
+WalletConnect, since the dApp is the WalletConnect client that initiates the session.
 
 ## What to copy into your own dApp
 
 - **`src/walletManager.ts`** (React/Solid/Svelte) / **`src/main.ts`**'s top (vanilla) —
-  the `WalletManager` setup: `biatec({ projectId, metadata })` plus, optionally,
+  the `WalletManager` setup: `biatec({ metadata })` (plus `projectId` only when set) plus, optionally,
   `BIATEC_EXTRA_NETWORKS` to add Voi mainnet / Aramid mainnet. The Vue example is the one
   exception: its `walletManagerConfig` is a plain config object, since `WalletManagerPlugin`
   builds the `WalletManager` itself.

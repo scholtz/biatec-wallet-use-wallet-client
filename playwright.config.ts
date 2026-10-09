@@ -1,6 +1,9 @@
 import { defineConfig, devices } from '@playwright/test'
 
 const PORT = 5183
+// Second dev server of the same example started WITHOUT a WalletConnect project id: the default
+// integration then offers only Direct and Liquid Auth (see e2e/no-project-id.spec.ts).
+const NO_PROJECT_ID_PORT = 5185
 
 export default defineConfig({
   testDir: './e2e',
@@ -15,19 +18,32 @@ export default defineConfig({
   projects: [{ name: 'chromium', use: { ...devices['Desktop Chrome'] } }],
   // The adapter package must already be built (`pnpm build`) before this runs — the vanilla-ts
   // example depends on it via `workspace:*`, resolving to `dist/`.
-  webServer: {
-    command: `pnpm --filter example-vanilla-ts exec vite --port ${PORT} --strictPort`,
-    url: `http://localhost:${PORT}`,
-    reuseExistingServer: !process.env.CI,
-    env: {
-      // Never a real WalletConnect Cloud project — these tests never complete a real pairing,
-      // they only exercise the UI up to (and including) opening the connect dialog.
-      VITE_WC_PROJECT_ID: 'e2e-test-project-id',
-      // The Direct popup tests answer for the wallet on this second origin (127.0.0.1 vs
-      // localhost, so the cross-origin postMessage path is really exercised); nothing listens
-      // there, the spec intercepts it with context.route(). The opt-in real-wallet spec points
-      // it at a running wallet instead (WALLET_E2E_URL).
-      VITE_DIRECT_WALLET_URL: process.env.WALLET_E2E_URL ?? 'http://127.0.0.1:5184'
+  webServer: [
+    {
+      command: `pnpm --filter example-vanilla-ts exec vite --port ${PORT} --strictPort`,
+      url: `http://localhost:${PORT}`,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        // Never a real WalletConnect Cloud project — these tests never complete a real pairing,
+        // they only exercise the UI up to (and including) opening the connect dialog.
+        VITE_WC_PROJECT_ID: 'e2e-test-project-id',
+        // The Direct popup tests answer for the wallet on this second origin (127.0.0.1 vs
+        // localhost, so the cross-origin postMessage path is really exercised); nothing listens
+        // there, the spec intercepts it with context.route(). The opt-in real-wallet spec points
+        // it at a running wallet instead (WALLET_E2E_URL).
+        VITE_DIRECT_WALLET_URL: process.env.WALLET_E2E_URL ?? 'http://127.0.0.1:5184'
+      }
+    },
+    {
+      command: `pnpm --filter example-vanilla-ts exec vite --port ${NO_PROJECT_ID_PORT} --strictPort`,
+      url: `http://localhost:${NO_PROJECT_ID_PORT}`,
+      reuseExistingServer: !process.env.CI,
+      env: {
+        // Empty on purpose (an env var overrides any .env file): no WalletConnect project id.
+        VITE_WC_PROJECT_ID: '',
+        VITE_CACHE_DIR: 'node_modules/.vite-no-project-id',
+        VITE_DIRECT_WALLET_URL: 'http://127.0.0.1:5184'
+      }
     }
-  }
+  ]
 })

@@ -9,7 +9,7 @@ the portable playbook meant for exactly that; this one is for maintaining this p
 
 `biatec-wallet-use-wallet-client` is a wallet adapter package for
 [`@txnlab/use-wallet`](https://github.com/TxnLab/use-wallet) v5. It connects dApps to
-[Biatec Wallet](https://wallet.biatec.io) over WalletConnect v2 and implements ARC-0001
+[Biatec Wallet](https://wallet.biatec.io) over Biatec Direct (popup), Liquid Auth and, only when the dApp passes a `projectId` (optional), WalletConnect v2, and implements ARC-0001
 transaction signing (`algo_signTxn`) and ARC-0060 data signing (`algo_signData`).
 
 It follows the same shape as the official adapter packages in
