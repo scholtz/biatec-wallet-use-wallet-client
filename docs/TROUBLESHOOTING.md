@@ -47,10 +47,13 @@ cause). Every network you connect on needs `caipChainId` — see
 [`BIATEC_EXTRA_NETWORKS`](API.md#biatec_extra_networks) for ready-made Voi/Aramid configs, or
 compute your own with [`caipChainIdFromGenesisHash`](API.md#caipchainidfromgenesishashgenesishashb64).
 
-## `SessionError: No session found!`
+## `SessionError: No active session; call connect() first` / `No session found!`
 
 `signTransactions()` or `signData()` was called before `connect()` resolved (or before
-`resumeSession()` restored a prior session). Check `wallet.isConnected` /
+`resumeSession()` restored a prior session, e.g. right after a page reload while
+`resumeSessions()` was still running). `No active session; call connect() first` means the
+adapter has no session at all; `No session found!` means the WalletConnect transport itself has no
+live session (for example the relay session expired or was deleted by the wallet). Check `wallet.isConnected` /
 `activeAddress` before offering a sign action, and make sure `resumeSessions()` has actually run
 — framework providers (`WalletProvider`, `WalletManagerPlugin`, …) do this for you on mount, but a
 vanilla integration must call `walletManager.resumeSessions()` explicitly before rendering
