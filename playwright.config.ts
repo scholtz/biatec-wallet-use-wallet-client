@@ -41,6 +41,7 @@ export default defineConfig({
       env: {
         // Empty on purpose (an env var overrides any .env file): no WalletConnect project id.
         VITE_WC_PROJECT_ID: '',
+        VITE_CACHE_DIR: 'node_modules/.vite-no-project-id',
         VITE_DIRECT_WALLET_URL: 'http://127.0.0.1:5184'
       }
     }

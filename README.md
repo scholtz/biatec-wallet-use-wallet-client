@@ -15,7 +15,7 @@ Connects your Algorand / AVM dApp to Biatec Wallet with
 - ARC-0060 arbitrary data signing (`algo_signData`) — `wallet.signData()` / `canSignData` work out of the box,
 - multi-chain sessions: Algorand mainnet, testnet, betanet, fnet, Voi mainnet and Aramid mainnet
   are all approved in one session, so `setActiveNetwork()` does not require a reconnect,
-- **three connection transports under one wallet**: **Direct** (the wallet in a popup, ARC-0027
+- **up to three connection transports under one wallet**: **Direct** (the wallet in a popup, ARC-0027
   over `postMessage` — no relay, no signaling server, works on `http://localhost`), Liquid Auth
   (passkey-linked, peer-to-peer WebRTC, no relay in the signing path) and, **optionally**,
   WalletConnect v2 (relay-based; enabled only when you pass a `projectId`) — `connect()` shows a modern, dark/light-aware dialog with a method selector
@@ -181,7 +181,7 @@ When several transports are enabled (the default is Direct and Liquid Auth; Wall
 glassmorphic dialog — a method selector (Biatec Direct / Liquid Auth, plus WalletConnect when a `projectId` is set) next to a
 live QR code / link for whichever method is selected. Biatec Direct is listed first and selected by
 default: it shows an **Open Biatec Wallet** button (a popup can only be opened from a click, so
-it is never opened just by selecting the tab or by `connect()` itself). Switching to the WalletConnect or Liquid Auth tab connects that transport on demand. If you pass your own `onDisplayUri`, or disable Direct, the default is WalletConnect (then Liquid Auth) and it starts immediately. It follows the system's
+it is never opened just by selecting the tab or by `connect()` itself). Switching to the WalletConnect or Liquid Auth tab connects that transport on demand. If you pass your own `onDisplayUri`, or disable Direct, the default is WalletConnect when enabled (then Liquid Auth) and it starts immediately. It follows the system's
 light/dark theme automatically (or an explicit `data-theme` on `<html>`, if your page sets one),
 and it's translated into every language Biatec Wallet itself ships — auto-detected from the
 browser, or force one with `biatec({ locale: 'sk' })` (see
@@ -195,7 +195,9 @@ WalletConnect. Change which tab is pre-selected with `defaultMethod` (an explici
 > `Missing required option: projectId`. Now a missing (or empty) `projectId` silently means
 > WalletConnect is not enabled, so `biatec()` offers only Direct and Liquid Auth. If you forgot
 > the id in a setup that relies on WalletConnect, users will see only those two tabs and the
-> console logs a warning when WalletConnect options (`relayUrl`, `chains`) are set without it.
+> console logs a warning when `projectId` is passed but empty/undefined (e.g. an unset env var)
+> or WalletConnect options (`relayUrl`, `chains`) are set without it; a plain `biatec()` logs only
+> an info line.
 > Pass `projectId` to keep WalletConnect.
 >
 > **Upgrading:** Direct-only setups (`walletconnect: false, liquid: false`) now also see the _Open Biatec Wallet_ button first instead of an immediately opened popup; pass `defaultMethod: 'direct'` or call `connect({ method: 'direct' })` to keep opening the popup immediately. The dialog now lists **Direct first and pre-selects it**; WalletConnect no longer auto-starts (its pairing begins when its tab is selected) unless it is the default. Integrators who want the QR first pass `defaultMethod: 'walletconnect'`; integrators with their own `onDisplayUri` UI keep WalletConnect as the default and are unaffected. The picker is skipped only when exactly **one** method is enabled. If you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`. With `onDisplayUri`, a picker-only overlay now appears unless exactly one method is enabled.

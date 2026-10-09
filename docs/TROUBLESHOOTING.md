@@ -3,8 +3,10 @@
 ## WalletConnect tab is missing from the connect dialog
 
 `projectId` is optional, and WalletConnect is only enabled when you pass a non-empty one. Without
-it the dialog shows just Biatec Direct and Liquid Auth (nothing throws; a warning is logged if
-`relayUrl`/`chains` are set without it). If you want WalletConnect (for example to reach a wallet on
+it the dialog shows just Biatec Direct and Liquid Auth (nothing throws). A warning is logged when
+`projectId` is passed but empty/undefined (typically an unset or mis-prefixed env var), or when
+`relayUrl`/`chains` are set without it; a plain `biatec()` logs only an info line. Calling
+`connect({ method: 'walletconnect' })` without it fails with a hint to add a `projectId`. If you want WalletConnect (for example to reach a wallet on
 another device with post-quantum, Ledger or multisig accounts, which Liquid Auth does not support),
 pass `biatec({ projectId })`. If you did pass one and the tab is still missing: the value was
 `undefined`/empty at construction time (a common cause is an env var Vite/Next.js hasn't inlined,
