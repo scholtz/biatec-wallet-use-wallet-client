@@ -52,10 +52,11 @@ connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 - `args.method` given → skip the dialog's method selector, connect with that transport directly
   (the dialog still appears to show its QR/link, unless `onDisplayUri` is set).
 - No `args`, more than one method enabled → `src/connect-dialog.ts`'s `openConnectDialog()` shows a
-  single modern dialog: a method selector (WalletConnect / Liquid Auth / Direct) on one side, and the
-  pairing QR code / link for whichever method is selected on the other. WalletConnect is
-  selected — and its `connect()` kicked off — immediately when the dialog opens, so its QR is
-  visible without an extra click; switching to the Liquid Auth tab lazily starts that transport's
+  single modern dialog: a method selector (Direct / WalletConnect / Liquid Auth) on one side, and the
+  pairing QR code / link (or the "Open Biatec Wallet" button) for whichever method is selected on
+  the other. Direct is selected by default and idle; WalletConnect starts when its tab is first
+  selected or when it is the default (own `onDisplayUri`, Direct disabled, or explicit
+  `defaultMethod`); likewise the Liquid Auth tab lazily starts that transport's
   `connect()` the first time it's selected and shows its QR once ready. Whichever method the user
   actually completes wins; the adapter tears down the other transport's still-pending attempt.
   Cancelling (✕, backdrop click, Escape, or the dialog rejecting both attempts) rejects

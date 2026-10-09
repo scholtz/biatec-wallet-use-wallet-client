@@ -1,8 +1,8 @@
 /**
  * Built-in connect UI for the unified Biatec Wallet connector: a modern, glassmorphic dialog
- * that shows a method selector (WalletConnect / Liquid Auth / Direct) on the left and the
- * pairing QR code / link for whichever method is selected on the right — defaulting to
- * WalletConnect when enabled. The Direct method has no QR code: its panel is an "Open Biatec
+ * that shows a method selector (Direct / WalletConnect / Liquid Auth) on the left and the
+ * pairing QR code / link for whichever method is selected on the right — Direct is listed first
+ * and pre-selected, except with an `onDisplayUri` or Direct disabled (then WalletConnect). The Direct method has no QR code: its panel is an "Open Biatec
  * Wallet" button whose click opens the popup synchronously (browsers block popups that are not
  * opened from a user gesture). Supports light and dark mode via `prefers-color-scheme`, and also respects
  * an explicit `data-theme="dark"` / `data-theme="light"` attribute on `<html>` if the host page
