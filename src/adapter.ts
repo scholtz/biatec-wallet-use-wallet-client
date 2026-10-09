@@ -6,7 +6,8 @@
  * `algo_signData` JSON-RPC), Liquid Auth (passkey-linked WebRTC carrying the same two
  * operations over an ARC-0027 envelope) and Direct (the wallet in a popup, ARC-0027 over
  * `postMessage`, no relay). When several are available, `connect()` shows a built-in dialog
- * (method selector + live QR/link or "Open Biatec Wallet" button) defaulting to WalletConnect;
+ * (method selector + live QR/link or "Open Biatec Wallet" button) listing Direct first and
+ * pre-selecting it (WalletConnect when you pass your own `onDisplayUri`);
  * pass `connect({ method })` to skip the picker. See docs/ARCHITECTURE.md.
  */
 import type algosdk from 'algosdk'
@@ -75,8 +76,12 @@ export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions,
    */
   direct?: DirectTransportOptions | false
   /**
-   * The method pre-selected in the connect dialog. Defaults to `'walletconnect'` when enabled,
-   * otherwise the first enabled method. Must be an enabled method.
+   * The method pre-selected in the connect dialog. Must be an enabled method. When omitted it
+   * is `'direct'` if enabled and the built-in dialog shows content (no `onDisplayUri`);
+   * otherwise `'walletconnect'` if enabled, else `'liquid'`, else `'direct'`. A default of
+   * `'direct'` that was only chosen implicitly never opens the popup by itself: the dialog shows
+   * the "Open Biatec Wallet" button. Pass `defaultMethod: 'direct'` explicitly to keep opening
+   * the popup immediately inside the `connect()` click.
    */
   defaultMethod?: BiatecMethod
   /**
@@ -145,6 +150,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
   private readonly locale: string | undefined
   private readonly enabledMethods: BiatecMethod[]
   private readonly defaultMethod: BiatecMethod
+  /** False when `direct` is the default only implicitly: its popup must not open on connect(). */
+  private readonly defaultAutoStart: boolean
   private activeMethod: BiatecMethod | null = null
 
   constructor(params: AdapterConstructorParams<BiatecWalletOptions>) {
@@ -183,9 +190,9 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       direct === false ? null : new DirectTransport(ctx, { enableSignData, ...(direct ?? {}) })
 
     const enabled: BiatecMethod[] = []
+    if (this.direct) enabled.push('direct')
     if (this.walletConnect) enabled.push('walletconnect')
     if (this.liquid) enabled.push('liquid')
-    if (this.direct) enabled.push('direct')
     this.enabledMethods = enabled
     if (enabled.length === 0) {
       this.logger.error('No connection method enabled')
@@ -197,7 +204,17 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       this.logger.error(`defaultMethod "${defaultMethod}" is not enabled`)
       throw new Error(`defaultMethod "${defaultMethod}" is not an enabled connection method`)
     }
-    this.defaultMethod = defaultMethod ?? enabled[0]
+    if (defaultMethod) {
+      this.defaultMethod = defaultMethod
+      this.defaultAutoStart = true
+    } else {
+      const preferDirect = enabled.includes('direct') && !onDisplayUri
+      this.defaultMethod = preferDirect
+        ? 'direct'
+        : (enabled.find((method) => method !== 'direct') ?? 'direct')
+      // An implicitly chosen Direct default waits for the "Open Biatec Wallet" click.
+      this.defaultAutoStart = this.defaultMethod !== 'direct'
+    }
   }
 
   static defaultMetadata: WalletMetadata = {
@@ -326,14 +343,15 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       if (!this.enabledMethods.includes(args.method)) {
         throw new SessionError(`Connection method "${args.method}" is not enabled`)
       }
-      return this.connectWithDialog([args.method], args.method)
+      return this.connectWithDialog([args.method], args.method, true)
     }
-    return this.connectWithDialog(this.enabledMethods, this.defaultMethod)
+    return this.connectWithDialog(this.enabledMethods, this.defaultMethod, this.defaultAutoStart)
   }
 
   private connectWithDialog(
     methods: BiatecMethod[],
-    defaultMethod: BiatecMethod
+    defaultMethod: BiatecMethod,
+    autoStart: boolean
   ): Promise<WalletAccount[]> {
     const showContent = !this.userOnDisplayUri
 
@@ -449,7 +467,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
           })
       }
 
-      attempt(defaultMethod)
+      // An implicit Direct default only shows its idle state; the button click starts it.
+      if (autoStart || !showContent) attempt(defaultMethod)
     })
   }
 

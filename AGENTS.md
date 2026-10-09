@@ -43,7 +43,7 @@ pnpm changeset      # record a change for release — see docs/RELEASING.md
   `liquid-transport.ts` (`LiquidTransport`) and `direct-transport.ts` (`DirectTransport`). `types.ts` defines `TransportContext`,
   `BiatecAccountMetadata`, `BiatecDisplayUriInfo`.
 - `src/connect-dialog.ts` — the built-in vanilla-DOM connect UI: one window with a method
-  selector (WalletConnect / Liquid Auth / Direct) on the left and the QR/link content (an "Open
+  selector (Direct / WalletConnect / Liquid Auth) on the left and the QR/link content (an "Open
   Biatec Wallet" button for Direct) for the selected method on the right; also the `adapter-constants.ts` values it and `adapter.ts` both need
   without importing each other.
 - `src/index.ts` — the `biatec()` factory + public exports (no separate Liquid Auth factory).

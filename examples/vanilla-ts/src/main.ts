@@ -43,7 +43,7 @@ applyTheme(currentTheme())
 themeToggle.onclick = () => applyTheme(currentTheme() === 'dark' ? 'light' : 'dark')
 
 // No `onDisplayUri` here, so `connect()` shows the adapter's own built-in dialog: one window
-// with a method selector (WalletConnect / Liquid Auth) on the left and the QR code for whichever
+// with a method selector (Biatec Direct / WalletConnect / Liquid Auth) on the left and the content for whichever
 // method is selected on the right — see src/connect-dialog.ts in the adapter package.
 // Only for local/e2e wallet development: point the Direct popup at another wallet origin.
 // Leave VITE_DIRECT_WALLET_URL unset to use https://wallet.biatec.io.

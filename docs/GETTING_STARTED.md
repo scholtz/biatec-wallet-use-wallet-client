@@ -255,8 +255,9 @@ library such as [`qrcode`](https://www.npmjs.com/package/qrcode), and remember
 ## 9. Liquid Auth and the method picker
 
 > There is also a third method, **Direct (popup)** — see [section 10](#10-direct-popup-no-relay-no-qr-code).
-> The built-in dialog lists all three; WalletConnect stays the pre-selected tab unless you pass
-> `defaultMethod`.
+> The built-in dialog lists all three, Direct first, and pre-selects Direct (its popup only opens
+> from the _Open Biatec Wallet_ click). Pass `defaultMethod: 'walletconnect'` to show the QR first; with
+> your own `onDisplayUri` WalletConnect stays the default.
 
 Liquid Auth (a passkey-linked, peer-to-peer WebRTC connection with no WalletConnect relay in the
 signing path) is enabled by default alongside WalletConnect — it's the `liquid` option on
@@ -272,9 +273,9 @@ biatec({
 ```
 
 With several methods enabled (the default), calling `wallet.connect()` with no arguments shows a built-in,
-dark/light-aware dialog: a method selector (WalletConnect / Liquid Auth / Biatec Direct) next to a
-live QR code (or an Open Biatec Wallet button, for Direct) for whichever one is selected. WalletConnect is selected by default so its QR shows immediately;
-clicking the Liquid Auth tab connects that transport and shows its QR instead. To build your own
+dark/light-aware dialog: a method selector (Biatec Direct / WalletConnect / Liquid Auth) next to a
+live QR code (or an Open Biatec Wallet button, for Direct) for whichever one is selected. Biatec Direct is selected by default (idle, with the button); clicking the WalletConnect or Liquid Auth tab connects
+that transport and shows its QR instead (pass `defaultMethod: 'walletconnect'` to show the QR immediately). To build your own
 picker, call `wallet.connect({ method: 'liquid' })` or `wallet.connect({ method: 'walletconnect' })`
 directly and skip the built-in one. To always go straight to WalletConnect (no picker),
 pass `liquid: false, direct: false`.
@@ -319,8 +320,8 @@ Things to know:
 - With the built-in dialog, the **Biatec Direct** tab shows an _Open Biatec Wallet_ button instead
   of a QR code; selecting the tab alone never opens a popup. Calling
   `connect({ method: 'direct' })` yourself from a click skips the picker.
-- `biatec({ projectId, defaultMethod: 'direct' })` pre-selects (and, on `connect()`, immediately
-  starts) the popup — only do that when `connect()` is called from a click.
+- `biatec({ projectId, defaultMethod: 'direct' })` pre-selects explicitly (and, on `connect()`, immediately
+  starts) the popup; without `defaultMethod`, Direct is pre-selected but only opens on the button click — only do that when `connect()` is called from a click.
 - The wallet decides which accounts the site may use (`enable` returns the accounts the user
   ticked). Switching `setActiveNetwork()` to a network the wallet isn't on fails with
   `DirectNetworkMismatchError` (`4004`).

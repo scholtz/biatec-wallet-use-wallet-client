@@ -22,7 +22,7 @@ choice of wallets, add more factories from their own `@txnlab/use-wallet-*` pack
 the main README.
 
 None of them set `onDisplayUri`, so `connect()` shows the adapter's own built-in dialog — one
-window with a WalletConnect/Liquid Auth/Direct method selector on one side and a live QR code plus
+window with a Direct/WalletConnect/Liquid Auth method selector on one side and a live QR code plus
 "Copy link" button (or, for Direct, an "Open Biatec Wallet" button) on the other, themed to match the page's light/dark mode. Only reach for
 `onDisplayUri` if you need to replace that UI with something fully custom — see
 [docs/API.md](../docs/API.md).

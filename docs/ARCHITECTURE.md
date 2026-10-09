@@ -52,10 +52,11 @@ connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 - `args.method` given → skip the dialog's method selector, connect with that transport directly
   (the dialog still appears to show its QR/link, unless `onDisplayUri` is set).
 - No `args`, more than one method enabled → `src/connect-dialog.ts`'s `openConnectDialog()` shows a
-  single modern dialog: a method selector (WalletConnect / Liquid Auth / Direct) on one side, and the
-  pairing QR code / link for whichever method is selected on the other. WalletConnect is
-  selected — and its `connect()` kicked off — immediately when the dialog opens, so its QR is
-  visible without an extra click; switching to the Liquid Auth tab lazily starts that transport's
+  single modern dialog: a method selector (Direct / WalletConnect / Liquid Auth) on one side, and the
+  pairing QR code / link (or the "Open Biatec Wallet" button) for whichever method is selected on
+  the other. Direct is selected by default and idle; WalletConnect starts when its tab is first
+  selected or when it is the default (own `onDisplayUri`, Direct disabled, or explicit
+  `defaultMethod`); likewise the Liquid Auth tab lazily starts that transport's
   `connect()` the first time it's selected and shows its QR once ready. Whichever method the user
   actually completes wins; the adapter tears down the other transport's still-pending attempt.
   Cancelling (✕, backdrop click, Escape, or the dialog rejecting both attempts) rejects
@@ -63,12 +64,12 @@ connect(args?: { method?: 'walletconnect' | 'liquid' | 'direct' })
 - No `args`, only one transport enabled → no selector shown — the dialog still appears (unless
   `onDisplayUri` is set) with only that method's content (QR/link, or the "Open Biatec Wallet"
   button for Direct).
-- `defaultMethod` (default `walletconnect`) picks the pre-selected tab. **Direct is never started
+- `defaultMethod` picks the pre-selected tab. Tabs are ordered `direct`, `walletconnect`, `liquid`. Without it the default is `direct` when enabled and the built-in dialog shows content (no `onDisplayUri`), else the first enabled method other than `direct` (`walletconnect`, then `liquid`), else `direct`. An implicit Direct default is not auto-started (`defaultAutoStart` is false): the idle panel waits for the button. WalletConnect/Liquid defaults start at once; other tabs start lazily on selection. **Direct is never started
   by merely selecting its tab**: `window.open` only works inside a user gesture, so the tab shows
   an "Open Biatec Wallet" button whose click handler calls `onSelectMethod('direct')` →
   `startTransport('direct')` → `DirectTransport.connect()` → `window.open`, all synchronously
   (no `await` anywhere on that path; the unit tests assert `window.open` has been called before
-  the first tick yields). When `defaultMethod: 'direct'` or `connect({ method: 'direct' })` is
+  the first tick yields). When an explicit `defaultMethod: 'direct'` or `connect({ method: 'direct' })` is
   used, `connect()` itself must be called from the click and opens the popup immediately.
 - A blocked popup (`PopupBlockedError`) is not a failure of the method: the dialog stays open in
   a `popup-blocked` state with the button to retry. If another method completes first, the

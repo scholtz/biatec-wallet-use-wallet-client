@@ -32,7 +32,7 @@ test('shows one flag per supported language and switches live without closing', 
   await expect(page.locator('.bcd-subtitle')).toHaveText('Vyberte, ako sa pripojiť')
   // The dialog must stay open and keep its state — switching language only re-renders text.
   await expect(panel).toBeVisible()
-  await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
+  await expect(page.locator('.bcd-method--active')).toContainText('Biatec Direct')
 
   expect(pageErrors).toEqual([])
 })
@@ -51,8 +51,8 @@ test('the language switcher survives switching connection methods', async ({ pag
 test('a language switch keeps keyboard focus on the chosen flag, not on the Direct open button', async ({
   page
 }) => {
+  // Direct is the pre-selected tab, so its open button already holds the initial focus.
   await page.click('#connect')
-  await page.click('[data-method="direct"]')
   await expect(page.locator('.bcd-open')).toBeFocused()
 
   // Move focus to a locale flag and switch language: the re-render must leave focus alone.
