@@ -65,7 +65,6 @@ import {
   parseResponseEnvelope,
   parseSignDataResult,
   parseSignTransactionsResult,
-  genesisHashesEqual,
   type DirectReady
 } from './direct-validation'
 import { ConnectAbortedError, type BiatecAccountMetadata, type TransportContext } from './types'
@@ -417,19 +416,18 @@ class PopupSession {
 
   /**
    * Waits for the wallet's `ready`, sends exactly one request and resolves with the validated
-   * result. `onReady` can veto based on the wallet's advertised capabilities.
+   * result. The wallet's advertised `capabilities.genesisHashes` is reserved and ignored: Direct
+   * supports every network, so nothing may be rejected on it.
    */
   async run<P, R>(
     request: LiquidRequestMessage<P>,
     responseReference: string,
     validate: (result: unknown) => R,
-    responseTimeoutMs: number,
-    onReady?: (capabilities: DirectReady) => void
+    responseTimeoutMs: number
   ): Promise<R> {
-    const capabilities = await this.ready.promise
+    await this.ready.promise
     if (this.settled)
       throw new LiquidProviderError('Request was cancelled', LiquidErrorCode.cancelled)
-    onReady?.(capabilities)
     this.exchange = { requestId: request.id, responseReference, validate }
     this.responseTimer = setTimeout(
       () =>
@@ -669,22 +667,6 @@ export class DirectTransport {
     return genesisHash
   }
 
-  /** Early network check against what the wallet advertised in `ready`. */
-  private checkNetwork(genesisHash: string): (capabilities: DirectReady) => void {
-    return (capabilities) => {
-      if (
-        capabilities.genesisHashes.length > 0 &&
-        !capabilities.genesisHashes.some((hash) => genesisHashesEqual(hash, genesisHash))
-      ) {
-        throw new LiquidProviderError(
-          'Biatec Wallet is not on the requested network',
-          LiquidErrorCode.networkNotSupported,
-          sanitizeErrorData({ genesisHashes: capabilities.genesisHashes })
-        )
-      }
-    }
-  }
-
   /** Turns wallet error codes into the errors consumers are told to expect. */
   private translate(error: unknown, genesisHash: string): Error {
     if (error instanceof LiquidProviderError) {
@@ -692,7 +674,7 @@ export class DirectTransport {
         // Only valid, bounded hashes ever reach callers (see sanitizeErrorData).
         const hashes = sanitizeErrorData(error.data)?.genesisHashes ?? []
         return new DirectNetworkMismatchError(
-          `Biatec Wallet is on a different network (requested genesis hash ${genesisHash}). Switch network in the wallet or in your dApp.`,
+          'This version of Biatec Wallet cannot sign on this network. Reload the wallet page to update it, or use another connection method.',
           genesisHash,
           hashes
         )
@@ -726,8 +708,7 @@ export class DirectTransport {
         buildRequest(LiquidReference.enableRequest, params),
         LiquidReference.enableResponse,
         (raw) => parseEnableResult(raw, genesisHash),
-        this.connectTimeoutMs,
-        this.checkNetwork(genesisHash)
+        this.connectTimeoutMs
       )
       // Aborted while the response was being processed: never write accounts for a lost attempt.
       if (handlers.signal?.aborted) throw new ConnectAbortedError()
@@ -762,17 +743,8 @@ export class DirectTransport {
       this.ctx.onDisconnect()
       return false
     }
-    // A session was granted for one network; if the dApp is now on another, it is stale.
-    const active = this.ctx.getActiveNetworkConfig().genesisHash
-    const persistedGenesis = metadata && metadata.method === 'direct' ? metadata.genesisHash : ''
-    if (!genesisHashesEqual(persistedGenesis, active)) {
-      this.ctx.logger.warn(
-        'Persisted Biatec Direct session was granted for another network; disconnecting'
-      )
-      this.ctx.onDisconnect()
-      return false
-    }
-    // Nothing to re-pair: a popup is opened per request.
+    // A grant is per site and accounts, not per network: a changed active network is fine
+    // (every request carries the active network's genesis hash). Nothing to re-pair: a popup is opened per request.
     this.ctx.logger.info('Biatec Direct session restored')
     return true
   }
@@ -823,8 +795,7 @@ export class DirectTransport {
         buildRequest(LiquidReference.signTransactionsRequest, params),
         LiquidReference.signTransactionsResponse,
         (raw) => parseSignTransactionsResult(raw, txnsToSign.length),
-        this.requestTimeoutMs,
-        this.checkNetwork(genesisHash)
+        this.requestTimeoutMs
       )
 
       // Everything below is re-validation of untrusted wallet output; it runs after the
@@ -1015,8 +986,7 @@ export class DirectTransport {
         buildRequest(LiquidReference.signDataRequest, params),
         LiquidReference.signDataResponse,
         (raw) => parseSignDataResult(raw, 1),
-        this.requestTimeoutMs,
-        this.checkNetwork(genesisHash)
+        this.requestTimeoutMs
       )
       const signature = signatures[0]
       if (signature === null) throw new SignDataError('Wallet returned no signature', 4001)

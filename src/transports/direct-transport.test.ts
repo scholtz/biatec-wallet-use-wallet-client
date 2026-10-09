@@ -807,7 +807,7 @@ describe('Direct transport — connect', () => {
     expect(error.walletGenesisHashes).toEqual(['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8=']) // invalid entries dropped
   })
 
-  it('fails early with a network mismatch when ready advertises other networks only', async () => {
+  it('ignores ready capabilities.genesisHashes (reserved): the request is sent on any network', async () => {
     const { adapter } = createAdapter()
     const connecting = adapter.connect({ method: 'direct' })
     connecting.catch(() => undefined)
@@ -819,10 +819,22 @@ describe('Direct transport — connect', () => {
         }
       })
     )
+    await flush()
+    expect(popup().postMessage).toHaveBeenCalled()
+  })
+
+  it('uses a legacy-wallet 4004 message that does not tell the user to switch network', async () => {
+    const { adapter } = createAdapter()
+    const { connecting, request } = await startConnect(adapter)
+    fromWallet(
+      response(request, LiquidReference.enableResponse, undefined, { code: 4004, message: 'x' })
+    )
     const error = await connecting.catch((e) => e)
     expect(error).toBeInstanceOf(DirectNetworkMismatchError)
-    expect(error.walletGenesisHashes).toEqual(['wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='])
-    expect(popup().postMessage).not.toHaveBeenCalled()
+    expect(error.message).toBe(
+      'This version of Biatec Wallet cannot sign on this network. Reload the wallet page to update it, or use another connection method.'
+    )
+    expect(error.message).not.toMatch(/Switch network|genesis hash/i)
   })
 
   it('rejects an enable result for a different network with a mismatch error', async () => {
@@ -1823,18 +1835,6 @@ describe('Direct transport — contract with the wallet implementation', () => {
     expect(error.code).toBe(4001)
   })
 
-  it('accepts a normalized hash in ready capabilities but rejects a different network', async () => {
-    const ok = createAdapter()
-    const connecting = ok.adapter.connect({ method: 'direct' })
-    connecting.catch(() => undefined)
-    fromWallet({
-      ...walletReady(),
-      capabilities: { methods: [], genesisHashes: [NORMALIZED_HASH] }
-    })
-    await flush()
-    expect(sentRequest().reference).toBe('arc0027:enable:request')
-  })
-
   it('rejects an enable result for another network even when written in the other base64 flavour', async () => {
     const ctx = createAdapter()
     const connecting = ctx.adapter.connect({ method: 'direct' })
@@ -2084,7 +2084,7 @@ describe('Direct transport — signature verification', () => {
   })
 })
 
-describe('Direct transport — resume after a network change', () => {
+describe('Direct transport — resume does not depend on the active network', () => {
   const persisted = (genesisHash: string) => {
     const account = {
       name: 'a',
@@ -2100,17 +2100,16 @@ describe('Direct transport — resume after a network change', () => {
     expect(adapter.isConnected).toBe(true)
   })
 
-  it('drops the session when it was granted for another network', async () => {
-    vi.spyOn(console, 'warn').mockImplementation(() => undefined)
+  it('keeps the session when it was connected on another network (grant is per site, not per network)', async () => {
     const { adapter } = createAdapter({}, persisted('wGHE2Pwdvd7S12BL5FaOP20EGYesN73ktiC1qzkkit8='))
     await adapter.resumeSession()
-    expect(adapter.isConnected).toBe(false)
+    expect(adapter.isConnected).toBe(true)
   })
 
-  it('drops a session whose persisted hash is garbage', async () => {
+  it('keeps the session even when the persisted hash is garbage (informational only)', async () => {
     const { adapter } = createAdapter({}, persisted('not-a-hash'))
     await adapter.resumeSession()
-    expect(adapter.isConnected).toBe(false)
+    expect(adapter.isConnected).toBe(true)
   })
 })
 

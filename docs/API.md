@@ -280,7 +280,7 @@ Configured via the `direct` field on `BiatecWalletOptions` (see
 [`BiatecDirectTransportOptions`](#biatecdirecttransportoptions) above). Every call that opens the
 popup (`connect`, `signTransactions`, `signData`) must be made from a user gesture with no `await`
 before it. Errors: `PopupBlockedError` (browser blocked the popup), `DirectNetworkMismatchError`
-(wallet error `4004`, carries `genesisHash` and `walletGenesisHashes`), `LiquidProviderError`
+(legacy wallet error `4004`, only answered by old wallet versions; carries `genesisHash` and `walletGenesisHashes`), `LiquidProviderError`
 (`code` `4001` rejected / popup closed, `4002` timed out, `4003` unsupported version, `4100`
 site not connected in the wallet, `4200` malformed or tampered wallet response). `signData()` wraps every Direct failure into a `SignDataError` (ARC-0060 codes) **except** `PopupBlockedError`, which is rethrown unchanged so the UI can ask the user to allow popups and click again. Exported
 constants: `DIRECT_PROTOCOL_VERSION`, `DIRECT_READY_REFERENCE`, `DIRECT_ROUTE`,
@@ -360,12 +360,12 @@ adapter doesn't know about yet to `options.chains`.
 
 ## Errors
 
-| Class                        | Exported from                                                                                                                 | When                                                                                                                                                                     |
-| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `SessionError`               | `biatec-wallet-use-wallet-client`                                                                                             | `signTransactions()` or `signData()` called before a session exists (i.e. before `connect()`/`resumeSession()` succeeded); `connect({ method })` with a disabled method. |
-| `PopupBlockedError`          | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: the browser blocked the wallet popup (`window.open` returned `null`) — not called from a user gesture, or popups are blocked for the site.                       |
-| `DirectNetworkMismatchError` | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: the wallet is on another network (`code` `4004`); has `genesisHash` (requested) and `walletGenesisHashes`.                                                       |
-| `SignDataError`              | `@txnlab/use-wallet` (generic, shared by every adapter — see [`signData`](#signdata) above for the codes this adapter throws) | `signData()` fails: user rejection, unsupported, or other error.                                                                                                         |
+| Class                        | Exported from                                                                                                                 | When                                                                                                                                                                               |
+| ---------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `SessionError`               | `biatec-wallet-use-wallet-client`                                                                                             | `signTransactions()` or `signData()` called before a session exists (i.e. before `connect()`/`resumeSession()` succeeded); `connect({ method })` with a disabled method.           |
+| `PopupBlockedError`          | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: the browser blocked the wallet popup (`window.open` returned `null`) — not called from a user gesture, or popups are blocked for the site.                                 |
+| `DirectNetworkMismatchError` | `biatec-wallet-use-wallet-client` (extends `SessionError`)                                                                    | Direct: an old wallet version cannot sign on this network (`code` `4004`, legacy; current wallets sign on every network); has `genesisHash` (requested) and `walletGenesisHashes`. |
+| `SignDataError`              | `@txnlab/use-wallet` (generic, shared by every adapter — see [`signData`](#signdata) above for the codes this adapter throws) | `signData()` fails: user rejection, unsupported, or other error.                                                                                                                   |
 
 ```ts
 class SessionError extends Error {}

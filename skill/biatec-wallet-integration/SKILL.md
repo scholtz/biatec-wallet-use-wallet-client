@@ -331,7 +331,7 @@ Rules to enforce when you wire this up:
   or localhost, and logs a warning). Disable the method with `direct: false` if the user doesn't
   want it.
 - Error handling worth surfacing in the UI: `PopupBlockedError`, `DirectNetworkMismatchError`
-  (wallet on another network), code `4100` (site not connected in the wallet — reconnect), `4001`
+  (legacy: an old wallet version that cannot sign on this network; Direct otherwise works on every network), code `4100` (site not connected in the wallet — reconnect), `4001`
   (user rejected / closed the popup).
 
 Protocol and security rules: `docs/DIRECT_PROTOCOL.md` in the package repo.
