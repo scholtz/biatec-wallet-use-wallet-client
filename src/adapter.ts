@@ -340,7 +340,11 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
 
   /** The transport of the live session; WalletConnect for legacy/untagged sessions. */
   private activeTransport(): SigningTransport {
-    return this.getTransport(this.activeMethod ?? 'walletconnect')
+    if (this.activeMethod) return this.getTransport(this.activeMethod)
+    // A legacy persisted session (no method tag) that really is WalletConnect has no
+    // activeMethod either; with WalletConnect disabled there is simply no session.
+    if (this.walletConnect && this.isConnected) return this.walletConnect
+    throw new SessionError('No active session; call connect() first')
   }
 
   private makeOnDisplayUri(

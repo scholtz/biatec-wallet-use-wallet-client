@@ -1,11 +1,13 @@
 import algosdk from 'algosdk'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { ScopeType } from '@txnlab/use-wallet'
 import { createTestHarness } from '@txnlab/use-wallet/testing'
 import type { State } from '@txnlab/use-wallet/testing'
 import {
   BiatecWalletAdapter,
   classifyConnectError,
   PopupBlockedError,
+  SessionError,
   WALLET_ID,
   type BiatecWalletOptions
 } from './adapter'
@@ -791,6 +793,33 @@ describe('BiatecWalletAdapter — optional projectId', () => {
     expect(() => createBare({ defaultMethod: 'walletconnect' })).toThrow(
       /defaultMethod "walletconnect" is not an enabled connection method.*projectId/
     )
+  })
+
+  it.each([
+    ['without a projectId', {}],
+    ['with a projectId', { projectId: 'abc' }]
+  ])('signing without a session throws a SessionError, %s', async (_name, options) => {
+    const adapter = createBare(options)
+    const txn = algosdk.makePaymentTxnWithSuggestedParamsFromObject({
+      sender: ADDR1,
+      receiver: ADDR1,
+      amount: 0,
+      suggestedParams: {
+        fee: 1000,
+        minFee: 1000,
+        flatFee: true,
+        firstValid: 1,
+        lastValid: 1000,
+        genesisID: 'x',
+        genesisHash: new Uint8Array(32)
+      }
+    })
+    const signTxn = adapter.signTransactions([txn])
+    await expect(signTxn).rejects.toBeInstanceOf(SessionError)
+    await expect(signTxn).rejects.toThrow(/No active session; call connect\(\) first/)
+    const signData = adapter.signData('aGk=', { scope: ScopeType.AUTH, encoding: 'base64' })
+    await expect(signData).rejects.toBeInstanceOf(SessionError)
+    await expect(signData).rejects.not.toThrow(/projectId/)
   })
 
   it.each([
