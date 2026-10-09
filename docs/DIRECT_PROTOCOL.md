@@ -124,7 +124,7 @@ before `window.open`, once at least one position is to be signed. Because the wa
 transaction of the request, the **whole group** must consist of supported kinds, including
 pre-signed and counterparty (`signers: []`) positions; a group in which nothing is to be signed
 returns `null`s without a popup. This way the user never sees a pointless popup. dApps that need those
-kinds must use the WalletConnect method.
+kinds must use the WalletConnect method (which needs a `projectId`; Direct itself does not).
 
 ## 5.2 Request (dApp → wallet)
 

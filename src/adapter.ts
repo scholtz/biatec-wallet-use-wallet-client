@@ -58,25 +58,31 @@ export type { BiatecAccountMetadata, BiatecDisplayUriInfo, BiatecMethod } from '
 
 export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions, 'projectId'> {
   /**
-   * WalletConnect Cloud project id (https://cloud.reown.com). Required unless you pass
-   * `walletconnect: false`.
+   * WalletConnect Cloud project id (https://cloud.reown.com). OPTIONAL: when it is omitted (or
+   * empty / whitespace) the WalletConnect transport is simply not enabled and the dApp offers
+   * Biatec Direct and Liquid Auth only — no relay, no Cloud account. Add one if your users need
+   * to connect a wallet on ANOTHER device for key types Liquid Auth does not support
+   * (post-quantum, Ledger, multisig): WalletConnect is currently the only remote-device method
+   * for those.
    */
   projectId?: string
   /**
-   * Pass `false` to disable the WalletConnect transport entirely. This is the only case in
-   * which `projectId` may be omitted — e.g. `biatec({ walletconnect: false, liquid: false })`
-   * ships a dApp that talks to the wallet purely through the Direct popup, with no relay and no
-   * signaling server.
+   * Pass `false` to disable the WalletConnect transport even though a `projectId` is given.
+   * Without a `projectId` WalletConnect is already off, so this is only needed to switch it off
+   * explicitly — e.g. `biatec({ walletconnect: false, liquid: false })` ships a dApp that talks
+   * to the wallet purely through the Direct popup, with no relay and no signaling server.
    */
   walletconnect?: false
   /**
-   * Biatec Direct (popup + postMessage) transport configuration. Enabled by default; pass
-   * `false` to disable it. Direct must be started from a user gesture (a click handler): the
+   * Biatec Direct (popup + postMessage) transport configuration. Enabled by default and needs
+   * no `projectId` (it works with every account type the wallet can sign for itself, but only
+   * when the wallet runs in the same browser as the dApp); pass `false` to disable it. Direct must be started from a user gesture (a click handler): the
    * wallet opens in a popup, which browsers block otherwise.
    */
   direct?: DirectTransportOptions | false
   /**
-   * The method pre-selected in the connect dialog. Must be an enabled method. When omitted it
+   * The method pre-selected in the connect dialog. Must be an enabled method (`'walletconnect'`
+   * is only enabled when a `projectId` is given). When omitted it
    * is `'direct'` if enabled and the built-in dialog shows content (no `onDisplayUri`);
    * otherwise `'walletconnect'` if enabled, else `'liquid'`, else `'direct'`. A default of
    * `'direct'` that was only chosen implicitly never opens the popup by itself: the dialog shows
@@ -95,9 +101,11 @@ export interface BiatecWalletOptions extends Omit<WalletConnectTransportOptions,
   onDisplayUri?: (uri: string, info: BiatecDisplayUriInfo) => void | Promise<void>
   /**
    * Liquid Auth (passkey-linked WebRTC) transport configuration. Enabled by default with
-   * Biatec's hosted signaling service; pass `false` to disable it entirely. The method
-   * picker is skipped only when exactly ONE method is enabled, so to keep the old
-   * "always WalletConnect" behaviour also pass `direct: false`.
+   * Biatec's hosted signaling service and needs no `projectId`; it reaches a wallet on another
+   * device but only for plain and HD accounts (not Ledger, post-quantum or multisig). Pass
+   * `false` to disable it entirely. The method picker is skipped only when exactly ONE method
+   * is enabled, so to keep the old "always WalletConnect" behaviour also pass `projectId`,
+   * `direct: false` and `liquid: false`.
    */
   liquid?: LiquidTransportOptions | false
   /**
@@ -169,10 +177,17 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       ...walletConnectOptions
     } = this.options ?? {}
 
-    const walletConnectEnabled = walletconnect !== false
-    if (walletConnectEnabled && !projectId) {
-      this.logger.error('Missing required option: projectId')
-      throw new Error('Missing required option: projectId')
+    const trimmedProjectId = typeof projectId === 'string' ? projectId.trim() : ''
+    const walletConnectEnabled = walletconnect !== false && trimmedProjectId !== ''
+    if (
+      walletconnect !== false &&
+      trimmedProjectId === '' &&
+      (walletConnectOptions.relayUrl !== undefined || walletConnectOptions.chains !== undefined)
+    ) {
+      this.logger.warn(
+        'WalletConnect options were given without a projectId: WalletConnect stays disabled ' +
+          '(only Direct and Liquid Auth are offered). Pass projectId to enable it.'
+      )
     }
 
     this.userOnDisplayUri = onDisplayUri
@@ -180,10 +195,13 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     this.canSignData = enableSignData
 
     const ctx = this.buildTransportContext()
-    this.walletConnect =
-      walletConnectEnabled && projectId
-        ? new WalletConnectTransport(ctx, { ...walletConnectOptions, projectId, enableSignData })
-        : null
+    this.walletConnect = walletConnectEnabled
+      ? new WalletConnectTransport(ctx, {
+          ...walletConnectOptions,
+          projectId: trimmedProjectId,
+          enableSignData
+        })
+      : null
     this.liquid =
       liquid === false ? null : new LiquidTransport(ctx, { enableSignData, ...(liquid ?? {}) })
     this.direct =
@@ -197,12 +215,19 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     if (enabled.length === 0) {
       this.logger.error('No connection method enabled')
       throw new Error(
-        'At least one connection method (walletconnect, liquid, direct) must be enabled'
+        'At least one connection method (direct, liquid, walletconnect) must be enabled. ' +
+          'WalletConnect is only enabled when you pass a projectId ' +
+          '(biatec({ projectId }), free at https://cloud.reown.com); Direct and Liquid Auth ' +
+          'need none but are switched off by direct: false / liquid: false.'
       )
     }
     if (defaultMethod && !enabled.includes(defaultMethod)) {
       this.logger.error(`defaultMethod "${defaultMethod}" is not enabled`)
-      throw new Error(`defaultMethod "${defaultMethod}" is not an enabled connection method`)
+      const hint =
+        defaultMethod === 'walletconnect'
+          ? ' (WalletConnect needs a projectId: biatec({ projectId }), and walletconnect must not be false)'
+          : ''
+      throw new Error(`defaultMethod "${defaultMethod}" is not an enabled connection method${hint}`)
     }
     if (defaultMethod) {
       this.defaultMethod = defaultMethod

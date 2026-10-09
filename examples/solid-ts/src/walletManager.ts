@@ -1,12 +1,11 @@
 import { NetworkConfigBuilder, WalletManager } from '@txnlab/use-wallet'
 import { biatec, BIATEC_EXTRA_NETWORKS } from 'biatec-wallet-use-wallet-client'
 
-// Get a project id at https://cloud.reown.com and put it in examples/solid-ts/.env
-// as VITE_WC_PROJECT_ID (copy .env.example).
+// OPTIONAL. Without a WalletConnect project id the wallet offers Biatec Direct and Liquid Auth
+// only. To also offer WalletConnect (the only way to reach a wallet on another device for
+// post-quantum, Ledger and multisig accounts), get a free project id at https://cloud.reown.com
+// and put it in examples/solid-ts/.env as VITE_WC_PROJECT_ID (copy .env.example).
 const projectId = import.meta.env.VITE_WC_PROJECT_ID as string | undefined
-if (!projectId) {
-  throw new Error('Set VITE_WC_PROJECT_ID in examples/solid-ts/.env (see .env.example)')
-}
 
 // Optional: point the Liquid Auth transport at a self-hosted service (defaults to Biatec's).
 const liquidOrigin = import.meta.env.VITE_LIQUID_ORIGIN as string | undefined
@@ -30,8 +29,8 @@ const dappMetadata = {
  * The single WalletManager instance for the app. Create it once, outside any
  * component, and pass it to <WalletProvider manager={walletManager}>.
  *
- * A single Biatec Wallet entry supports both WalletConnect (relay-based) and Liquid Auth
- * (passkey-linked, peer-to-peer). No `onDisplayUri` is set here, so `connect()` shows the
+ * A single Biatec Wallet entry supports Biatec Direct (popup), Liquid Auth (passkey-linked,
+ * peer-to-peer) and, when a project id is set, WalletConnect (relay-based). No `onDisplayUri` is set here, so `connect()` shows the
  * adapter's own built-in dialog — one window with a method selector on the left and the QR
  * code for whichever method is selected on the right. Only reach for `onDisplayUri` if you
  * need to replace that UI with something fully custom (see docs/API.md).
@@ -39,7 +38,7 @@ const dappMetadata = {
 export const walletManager = new WalletManager({
   wallets: [
     biatec({
-      projectId,
+      ...(projectId ? { projectId } : {}),
       // Optional: dApp metadata shown to the user inside Biatec Wallet.
       // Auto-detected from <title>/<meta description>/favicon when omitted.
       metadata: dappMetadata,

@@ -42,7 +42,7 @@ export const DEFAULT_RELAY_URL = 'wss://relay.walletconnect.com'
 const SESSION_EVENTS = ['chainChanged', 'accountsChanged']
 
 export interface WalletConnectTransportOptions {
-  /** WalletConnect Cloud project id (https://cloud.reown.com). Required. */
+  /** WalletConnect Cloud project id (https://cloud.reown.com). Required by this transport; the adapter only creates it when given. */
   projectId: string
   /** Relay URL. Defaults to the public WalletConnect relay. */
   relayUrl?: string

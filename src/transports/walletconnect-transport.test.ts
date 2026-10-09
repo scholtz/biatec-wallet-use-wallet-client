@@ -140,22 +140,20 @@ afterEach(() => {
 
 describe('BiatecWalletAdapter — WalletConnect transport', () => {
   describe('constructor', () => {
-    it('throws when projectId is missing', () => {
+    it('does not enable WalletConnect (and does not throw) when projectId is missing', () => {
       const { accessor, store } = createTestHarness(WALLET_ID)
-      expect(
-        () =>
-          new BiatecWalletAdapter({
-            id: WALLET_ID,
-            metadata: BiatecWalletAdapter.defaultMetadata,
-            store: accessor,
-            subscribe: (cb) => {
-              const subscription = store.subscribe(() => cb(store.state))
-              return () => subscription.unsubscribe()
-            },
-            getAlgodClient: () => mockAlgodClient,
-            options: {} as BiatecWalletOptions
-          })
-      ).toThrow('Missing required option: projectId')
+      const adapter = new BiatecWalletAdapter({
+        id: WALLET_ID,
+        metadata: BiatecWalletAdapter.defaultMetadata,
+        store: accessor,
+        subscribe: (cb) => {
+          const subscription = store.subscribe(() => cb(store.state))
+          return () => subscription.unsubscribe()
+        },
+        getAlgodClient: () => mockAlgodClient,
+        options: {} as BiatecWalletOptions
+      })
+      expect(adapter.supportedChainIds).toEqual([])
     })
 
     it('enables signData by default and honours enableSignData: false', () => {

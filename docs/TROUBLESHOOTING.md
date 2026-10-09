@@ -1,13 +1,20 @@
 # Troubleshooting
 
-## `Missing required option: projectId`
+## WalletConnect tab is missing from the connect dialog
 
-Thrown synchronously by `biatec({...})` / `new BiatecWalletAdapter(...)` while the WalletConnect
-transport is enabled. If you only use Direct and/or Liquid Auth, pass `walletconnect: false` and
-drop `projectId`. Otherwise `projectId` wasn't passed, or is `undefined` at construction time — a common cause is reading an env var that Vite/
-Next.js hasn't inlined yet (e.g. missing the `VITE_`/`NEXT_PUBLIC_` prefix, or the `.env` file not
-being loaded because the dev server started before it existed). Log the value right before
-constructing the `WalletManager` to confirm it's a non-empty string.
+`projectId` is optional, and WalletConnect is only enabled when you pass a non-empty one. Without
+it the dialog shows just Biatec Direct and Liquid Auth (nothing throws; a warning is logged if
+`relayUrl`/`chains` are set without it). If you want WalletConnect (for example to reach a wallet on
+another device with post-quantum, Ledger or multisig accounts, which Liquid Auth does not support),
+pass `biatec({ projectId })`. If you did pass one and the tab is still missing: the value was
+`undefined`/empty at construction time (a common cause is an env var Vite/Next.js hasn't inlined,
+e.g. missing the `VITE_`/`NEXT_PUBLIC_` prefix, or a `.env` loaded after the dev server started;
+log it right before constructing the `WalletManager`), or `walletconnect: false` is set.
+
+Also: `defaultMethod: 'walletconnect'` without a `projectId` throws
+(`defaultMethod "walletconnect" is not an enabled connection method`), and so does disabling
+every method (`direct: false, liquid: false` with no `projectId`). A session persisted with
+WalletConnect is dropped on reload when WalletConnect is no longer enabled.
 
 ## `No URI found` / `connect()` hangs forever
 

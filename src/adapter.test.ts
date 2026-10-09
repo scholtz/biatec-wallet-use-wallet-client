@@ -723,3 +723,92 @@ describe('BiatecWalletAdapter — picker-only mode reports a failed explicit Dir
     )
   })
 })
+
+// ---------- projectId is optional: WalletConnect is only enabled with one ----- //
+
+describe('BiatecWalletAdapter — optional projectId', () => {
+  function createBare(options: BiatecWalletOptions = {}, state?: Partial<State>) {
+    const { store, accessor } = createTestHarness(WALLET_ID, state)
+    const adapter = new BiatecWalletAdapter({
+      id: WALLET_ID,
+      metadata: BiatecWalletAdapter.defaultMetadata,
+      store: accessor,
+      subscribe: (callback) => {
+        const subscription = store.subscribe(() => callback(store.state))
+        return () => subscription.unsubscribe()
+      },
+      getAlgodClient: () => mockAlgodClient,
+      options
+    })
+    return adapter
+  }
+
+  /** Opens the (mocked) dialog, cancels it, and returns what it was given. */
+  async function dialogOptions(adapter: BiatecWalletAdapter) {
+    vi.mocked(connectDialog.openConnectDialog).mockImplementationOnce((opts) => {
+      opts.onCancel()
+      return { close: vi.fn(), setState: vi.fn() }
+    })
+    await expect(adapter.connect()).rejects.toThrow('Connection cancelled')
+    return vi.mocked(connectDialog.openConnectDialog).mock.calls[0][0]
+  }
+
+  it('defaults to Direct and Liquid Auth without a projectId', async () => {
+    const options = await dialogOptions(createBare())
+    expect(options.methods).toEqual(['direct', 'liquid'])
+    expect(options.defaultMethod).toBe('direct')
+    expect(mocks.signClientInit).not.toHaveBeenCalled()
+  })
+
+  it.each(['', '   '])('treats projectId %j as absent', async (projectId) => {
+    const options = await dialogOptions(createBare({ projectId }))
+    expect(options.methods).toEqual(['direct', 'liquid'])
+  })
+
+  it('offers all three methods, in order, with a projectId', async () => {
+    const options = await dialogOptions(createBare({ projectId: 'abc' }))
+    expect(options.methods).toEqual(['direct', 'walletconnect', 'liquid'])
+  })
+
+  it('walletconnect: false disables WalletConnect even with a projectId', async () => {
+    const options = await dialogOptions(createBare({ projectId: 'abc', walletconnect: false }))
+    expect(options.methods).toEqual(['direct', 'liquid'])
+  })
+
+  it('liquid: false without a projectId leaves Direct only', () => {
+    const adapter = createBare({ liquid: false })
+    expect(adapter.directWalletOrigin).not.toBeNull()
+    expect(adapter.walletInfo).toBeNull()
+  })
+
+  it('throws an actionable error when no method is enabled', () => {
+    expect(() => createBare({ direct: false, liquid: false })).toThrow(
+      /At least one connection method.*WalletConnect.*projectId/s
+    )
+  })
+
+  it("throws a hint when defaultMethod is 'walletconnect' but there is no projectId", () => {
+    expect(() => createBare({ defaultMethod: 'walletconnect' })).toThrow(
+      /defaultMethod "walletconnect" is not an enabled connection method.*projectId/
+    )
+  })
+
+  it.each([
+    ['tagged walletconnect', { method: 'walletconnect' }],
+    ['legacy untagged', undefined]
+  ])(
+    'resumeSession drops a persisted %s session when WalletConnect is not enabled',
+    async (_n, metadata) => {
+      const account = { name: 'a', address: ADDR1, ...(metadata ? { metadata } : {}) }
+      const adapter = createBare(
+        {},
+        { wallets: { [WALLET_ID]: { accounts: [account], activeAccount: account } } }
+      )
+
+      await expect(adapter.resumeSession()).resolves.toBeUndefined()
+
+      expect(adapter.isConnected).toBe(false)
+      expect(mocks.signClientInit).not.toHaveBeenCalled()
+    }
+  )
+})

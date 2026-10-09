@@ -258,8 +258,8 @@ describe('Direct transport — construction & options', () => {
     expect(() => createAdapter()).not.toThrow()
   })
 
-  it('still throws without a projectId when walletconnect is not disabled', () => {
-    expect(() => createAdapter({ withWalletConnect: true })).toThrow(/projectId/)
+  it('does not throw without a projectId even when walletconnect is not disabled', () => {
+    expect(() => createAdapter({ withWalletConnect: true })).not.toThrow()
   })
 
   it('throws when every connection method is disabled', () => {

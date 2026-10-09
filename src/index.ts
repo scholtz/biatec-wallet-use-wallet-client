@@ -15,9 +15,10 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
 
 /**
  * Factory for the Biatec Wallet adapter. A single wallet entry that supports connecting over
- * WalletConnect v2, Liquid Auth (passkey-linked WebRTC) or Direct (the wallet in a popup, no
- * relay) — all enabled by default, and `connect()` shows a built-in picker when several are
- * available.
+ * Biatec Direct (the wallet in a popup, no relay), Liquid Auth (passkey-linked WebRTC) or —
+ * only when you pass a `projectId` — WalletConnect v2. Direct and Liquid Auth are enabled by
+ * default and need no WalletConnect Cloud account; `connect()` shows a built-in picker when
+ * several are available.
  *
  * @example
  * ```ts
@@ -25,8 +26,15 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
  * import { biatec } from 'biatec-wallet-use-wallet-client'
  *
  * const manager = new WalletManager({
- *   wallets: [biatec({ projectId: '<walletconnect-project-id>' })]
+ *   wallets: [biatec()] // Direct + Liquid Auth, no projectId needed
  * })
+ * ```
+ *
+ * WalletConnect is optional. Add a project id (https://cloud.reown.com) to also offer it — today
+ * it is the only way to reach a wallet on another device for post-quantum, Ledger and multisig
+ * accounts, which Liquid Auth does not support:
+ * ```ts
+ * biatec({ projectId: '<walletconnect-project-id>' })
  * ```
  *
  * Disable Liquid Auth and Direct, and always connect over WalletConnect:
@@ -34,12 +42,12 @@ export interface BiatecFactoryOptions extends BiatecWalletOptions {
  * biatec({ projectId: '<walletconnect-project-id>', liquid: false, direct: false })
  * ```
  *
- * Direct only — no relay, no signaling server, no projectId:
+ * Direct only — no relay, no signaling server:
  * ```ts
  * biatec({ walletconnect: false, liquid: false })
  * ```
  */
-export function biatec(options: BiatecFactoryOptions): WalletAdapterConfig {
+export function biatec(options: BiatecFactoryOptions = {}): WalletAdapterConfig {
   const { displayMetadata, ...adapterOptions } = options
   return {
     id: WALLET_ID,

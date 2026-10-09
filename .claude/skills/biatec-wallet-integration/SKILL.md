@@ -1,6 +1,6 @@
 ---
 name: biatec-wallet-integration
-description: Integrate Biatec Wallet (an Algorand/AVM WalletConnect wallet at wallet.biatec.io) into a dApp using @txnlab/use-wallet v5 and the biatec-wallet-use-wallet-client adapter package. Use when a user asks to add Biatec Wallet, add an Algorand/AVM wallet connect button, wire up ARC-0001 transaction signing or ARC-0060 data signing for an Algorand app, or troubleshoot an existing Biatec Wallet / use-wallet integration.
+description: Integrate Biatec Wallet (an Algorand/AVM wallet at wallet.biatec.io; Direct, Liquid Auth and optional WalletConnect connections) into a dApp using @txnlab/use-wallet v5 and the biatec-wallet-use-wallet-client adapter package. Use when a user asks to add Biatec Wallet, add an Algorand/AVM wallet connect button, wire up ARC-0001 transaction signing or ARC-0060 data signing for an Algorand app, or troubleshoot an existing Biatec Wallet / use-wallet integration.
 license: MIT
 ---
 
@@ -41,12 +41,18 @@ Before writing anything, determine:
    found, you're **adding** Biatec Wallet to an existing `wallets: [...]` array, not creating a
    new manager — go to [Step 7](#7-optional-add-more-wallets-alongside-biatec-wallet) for the
    registration snippet and skip re-creating the provider/plugin wiring.
-4. **A WalletConnect Cloud project id**: search env files (`.env`, `.env.local`, `.env.example`)
-   and the codebase for an existing `WC_PROJECT_ID` / `WALLETCONNECT_PROJECT_ID` / similar — many
-   dApps already have one from another wallet integration (Pera, Defly, …), and the **same** id
-   works for Biatec Wallet (it identifies your dApp to the relay, not the wallet). If none exists,
-   tell the user to create one at <https://cloud.reown.com> (free) — you cannot generate this
-   value yourself. Ask for it or add a placeholder env var and clearly flag it as required.
+4. **Do they need WalletConnect (a project id)? Usually not at first.** `biatec()` with no
+   options offers **Biatec Direct** (popup, same browser, any account type the wallet can sign,
+   incl. Ledger/multisig/post-quantum) and **Liquid Auth** (passkey + WebRTC, wallet on another
+   device, plain/HD accounts only, no Ledger/post-quantum/multisig). A WalletConnect Cloud
+   `projectId` is **optional**; add it only if the dApp's users must connect a wallet on a
+   **remote device** with post-quantum, Ledger or multisig accounts, because WalletConnect is
+   currently the only method that reaches those. Search env files (`.env`, `.env.local`,
+   `.env.example`) and the codebase for an existing `WC_PROJECT_ID` /
+   `WALLETCONNECT_PROJECT_ID` / similar: if the dApp already has one (e.g. from Pera or Defly) the
+   **same** id works for Biatec Wallet and you should pass it. If none exists, do NOT invent a
+   placeholder or block on it: integrate without one, and tell the user that adding
+   `projectId` (free at <https://cloud.reown.com>, you cannot generate it) enables WalletConnect.
 
 ## 1. Install dependencies
 
@@ -87,33 +93,37 @@ import { biatec } from 'biatec-wallet-use-wallet-client'
 export const walletManager = new WalletManager({
   wallets: [
     biatec({
-      projectId: /* the id from Step 0.4 — read it from an env var, don't hardcode */,
+      // OPTIONAL (see Step 0.4): only when a WalletConnect project id exists, from an env var
+      // (never hardcode it). Omit the key entirely otherwise; do not pass '' or a placeholder.
+      // ...(projectId ? { projectId } : {}),
       metadata: {
         name: /* the dApp's name */,
         description: /* one sentence describing the dApp */,
         url: typeof window !== 'undefined' ? window.location.origin : '',
         icons: [/* absolute URL to an icon, or [] */]
       }
-      // liquid: false, direct: false // uncomment to always use WalletConnect (no picker) — see Steps 5b/5c
+      // liquid: false, direct: false // with a projectId: always use WalletConnect (no picker) — see Steps 5b/5c
     })
   ],
   defaultNetwork: 'testnet' // 'mainnet' once ready for production; see Step 5 for other networks
 })
 ```
 
-Read the project id from whatever env var convention the framework uses
+If you do use a project id, read it from whatever env var convention the framework uses
 (`import.meta.env.VITE_*` for Vite, `process.env.NEXT_PUBLIC_*` for Next.js, etc.) — **never**
-hardcode it as a literal string in committed code. Add the corresponding entry to `.env.example`
-if one exists. **`projectId` is required even if the dApp mainly wants Liquid Auth** (Step 5b), unless WalletConnect is switched off with `walletconnect: false` (Direct-only, Step 5c) —
-`biatec()` covers all three transports under one wallet.
+hardcode it as a literal string in committed code — and add the entry to `.env.example` if one
+exists. Pass it conditionally (`...(projectId ? { projectId } : {})`; the package uses
+`exactOptionalPropertyTypes`). **`projectId` is optional**: without it WalletConnect is simply not
+enabled (no error) and the dApp offers Direct and Liquid Auth. A missing id never needs a
+placeholder. `walletconnect: false` disables WalletConnect even when an id is given.
 
 `metadata` is optional; omitting it makes the adapter read `<title>`/`<meta description>`/favicon
 from the page at connect time. Prefer setting it explicitly for a stable, intentional presentation
 inside Biatec Wallet's approval screen.
 
-`biatec()` registers **one** wallet (id `biatec`) that supports WalletConnect, Liquid Auth and Direct
-— the latter two are enabled by default. `wallet.connect()` with no arguments shows a built-in picker
-letting the user choose; pass `liquid: false, direct: false` to skip that picker entirely (it is skipped only when exactly one method is enabled)
+`biatec()` registers **one** wallet (id `biatec`) that supports Direct, Liquid Auth and, with a
+`projectId`, WalletConnect — Direct and Liquid Auth are enabled by default. `wallet.connect()` with no arguments shows a built-in picker
+letting the user choose; with a `projectId`, pass `liquid: false, direct: false` to skip that picker entirely (it is skipped only when exactly one method is enabled)
 (see Step 5b for when to keep it enabled).
 
 ## 3. Detect the framework and continue accordingly
@@ -175,7 +185,7 @@ import { biatec } from 'biatec-wallet-use-wallet-client'
 
 createApp(App)
   .use(WalletManagerPlugin, {
-    wallets: [biatec({ projectId: import.meta.env.VITE_WC_PROJECT_ID })],
+    wallets: [biatec()],
     defaultNetwork: 'testnet'
   })
   .mount('#app')
@@ -227,10 +237,10 @@ walletManager.subscribe(() => {
 ## 5. Default pairing UI (do nothing) / optional fully custom UI
 
 By default — i.e. don't pass `onDisplayUri` at all — `connect()` shows the adapter's own built-in
-dialog: one window with a method selector (Direct / WalletConnect / Liquid Auth, when several are enabled) on
+dialog: one window with a method selector (Direct / Liquid Auth, plus WalletConnect when a `projectId` is set, when several are enabled) on
 the left and a QR code, the raw pairing/session link, and a copy button on the right, matching the
 system's light/dark theme. **This is almost always the right choice** — don't build a custom
-pairing dialog unless the user explicitly asks for one; just call `biatec({ projectId, ... })`
+pairing dialog unless the user explicitly asks for one; just call `biatec({ ... })`
 with no `onDisplayUri` and leave it there. Both example apps in this repo (`examples/react-ts`,
 `examples/vanilla-ts`) do exactly this.
 
@@ -244,8 +254,7 @@ built-in dialog is already themeable via their page's light/dark mode), implemen
 
    ```ts
    biatec({
-     projectId,
-     onDisplayUri: (uri, info) => showQrDialog(uri, info) // info.method: 'walletconnect' | 'liquid'
+     onDisplayUri: (uri, info) => showQrDialog(uri, info) // info.method: 'direct' | 'liquid' | 'walletconnect'
    })
    ```
 
@@ -271,21 +280,22 @@ separate factory or wallet id:
 
 ```ts
 biatec({
-  projectId, // still required even if the dApp mainly wants Liquid Auth
   liquid: {
     // origin: 'https://liquid.biatec.io' // default; only change for a self-hosted service
   }
-  // liquid: false, direct: false // connect() always uses WalletConnect, no picker
+  // projectId + liquid: false, direct: false // connect() always uses WalletConnect, no picker
 })
 ```
 
 With several methods enabled (the default), calling `wallet.connect()` with no arguments shows a
-**built-in, modern dialog**: a method selector (Biatec Direct / WalletConnect / Liquid Auth) next
-to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — Biatec Direct is listed first and selected by default (it waits for the _Open Biatec Wallet_ click); the WalletConnect and Liquid Auth tabs connect on demand. Pass `defaultMethod: 'walletconnect'` to show the QR first. Direct-only setups (`walletconnect: false, liquid: false`) also get the button first now: pass `defaultMethod: 'direct'` or call `connect({ method: 'direct' })` to open the popup immediately (the default whenever you pass your own `onDisplayUri`). It follows the system's light/dark
+**built-in, modern dialog**: a method selector (Biatec Direct / Liquid Auth, plus WalletConnect when a `projectId` is set) next
+to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — Biatec Direct is listed first and selected by default (it waits for the _Open Biatec Wallet_ click); the WalletConnect and Liquid Auth tabs connect on demand. With a `projectId`, pass `defaultMethod: 'walletconnect'` to show the QR first. Direct-only setups (`walletconnect: false, liquid: false`) also get the button first now: pass `defaultMethod: 'direct'` or call `connect({ method: 'direct' })` to open the popup immediately (the default whenever you pass your own `onDisplayUri`). It follows the system's light/dark
 theme automatically. Leave it as-is unless the user asks for a custom picker UI — in that case,
 build your own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
 `wallet.connect({ method: 'walletconnect' })` directly to skip the built-in one. If the user only
-wants WalletConnect (no selector at all), pass `liquid: false, direct: false`.
+wants WalletConnect (no selector at all), pass `projectId` with `liquid: false, direct: false`.
+Liquid Auth cannot sign for Ledger, post-quantum or multisig accounts: tell users who need those
+on a remote device that the dApp must also enable WalletConnect (add `projectId`).
 
 Everything downstream (`useWallet()`, `signTransactions`, `signData`) is identical regardless of
 which transport connected. Do not try to host a Liquid Auth service for the dApp: with the web
@@ -294,13 +304,13 @@ does. Details: `docs/LIQUID_AUTH_PROTOCOL.md` in the package repo.
 
 ## 5c. Direct (popup) transport: no relay, no QR code
 
-A **third transport, `direct`**, is also enabled by default: Biatec Wallet opens in a **popup**
+The **`direct`** transport is also enabled by default: Biatec Wallet opens in a **popup**
 and talks to the dApp over `window.postMessage` — no WalletConnect relay, no Liquid Auth service,
 no QR code, works on `http://localhost`. The built-in dialog lists it as the **Biatec Direct** tab
 with an _Open Biatec Wallet_ button.
 
 ```ts
-// A dApp that wants only Direct needs no projectId at all:
+// A dApp that wants only Direct:
 biatec({ walletconnect: false, liquid: false })
 
 // Connect from a click handler — NO `await` before the call, or the browser blocks the popup:
@@ -314,7 +324,7 @@ Rules to enforce when you wire this up:
   `PopupBlockedError` — ask the user to allow popups and click again.
 - Never set `Cross-Origin-Opener-Policy: same-origin` on the dApp (it breaks the popup channel);
   `same-origin-allow-popups` or no header is fine.
-- `projectId` is only optional when `walletconnect: false` is passed. an explicit `defaultMethod: 'direct'`
+- No `projectId` is needed for Direct. An explicit `defaultMethod: 'direct'`
   pre-selects (and, on `connect()`, immediately starts) the popup — only do that when `connect()`
   runs from a click.
 - Do not set `direct.walletUrl` in production (it is for local wallet development, must be https
@@ -342,7 +352,7 @@ const networks = new NetworkConfigBuilder()
   .build()
 
 export const walletManager = new WalletManager({
-  wallets: [biatec({ projectId })],
+  wallets: [biatec()],
   networks,
   defaultNetwork: 'testnet'
 })
@@ -362,7 +372,7 @@ import { pera } from '@txnlab/use-wallet-pera'
 import { defly } from '@txnlab/use-wallet-defly'
 import { biatec } from 'biatec-wallet-use-wallet-client'
 
-new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
+new WalletManager({ wallets: [biatec(), pera(), defly()] })
 ```
 
 The UI code from Step 4 already iterates `wallets` generically, so a multi-wallet picker needs no
@@ -423,16 +433,16 @@ Run these, in order, and don't report the task done until all pass:
 3. **Builds**: run the project's build script. A build failure here usually means a bundler/peer
    dependency mismatch — see the troubleshooting table below before guessing.
 4. **Manual smoke test** (tell the user to do this, or do it yourself if you can run a browser):
-   start the dev server, click the connect button, confirm a WalletConnect URI/QR appears, and
+   start the dev server, click the connect button, confirm the connect dialog opens with the expected tabs (Direct and Liquid Auth; plus WalletConnect with a `projectId`), and
    (if a real Biatec Wallet instance is available) approve the pairing and confirm the address
-   renders. This step needs a live WalletConnect Cloud project id — a placeholder value fails here
-   with `No URI found`, which is expected until a real id is set.
+   renders. Testing the WalletConnect tab needs a live WalletConnect Cloud project id — a placeholder
+   value fails there with `No URI found`.
 
 ## Troubleshooting quick reference
 
 | Symptom                                                                            | Likely cause                                                                                                  | Fix                                                                                                                             |
 | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
-| `Missing required option: projectId`                                               | Env var not set, wrong prefix, or `.env` not loaded                                                           | Confirm the exact env var name the framework requires (e.g. `VITE_` / `NEXT_PUBLIC_` prefix) and that it's non-empty at runtime |
+| WalletConnect tab missing from the dialog                                          | No (non-empty) `projectId` passed, env var not set, wrong prefix, or `.env` not loaded                        | Confirm the exact env var name the framework requires (e.g. `VITE_` / `NEXT_PUBLIC_` prefix) and that it's non-empty at runtime |
 | `No URI found` / connect hangs                                                     | Invalid/placeholder WalletConnect project id, or relay unreachable                                            | Get a real id from <https://cloud.reown.com>; check its dashboard for rejected requests                                         |
 | Modal never opens                                                                  | CSP blocks `wss://relay.walletconnect.com`, or `onDisplayUri` set but not rendered                            | Add the relay host to `connect-src`; confirm your custom URI handler actually shows something                                   |
 | `Network "<id>" has no caipChainId`                                                | Custom `NetworkConfig` missing that field, or `defaultNetwork` typo'd                                         | Use `BIATEC_EXTRA_NETWORKS`/`caipChainIdFromGenesisHash`, or fix the typo                                                       |
