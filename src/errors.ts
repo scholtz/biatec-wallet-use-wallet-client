@@ -20,8 +20,9 @@ export class PopupBlockedError extends SessionError {
 }
 
 /**
- * The wallet is on a different network than the dApp asked for (ARC-0027 error 4004). Surface
- * a "switch network" prompt using {@link genesisHash} (what the dApp requested) and, when the
+ * Legacy: an old wallet version answered ARC-0027 error 4004 for a network it was not on. Current
+ * wallets sign on every network. Do not ask the user to switch network; suggest reloading the wallet
+ * page or another connection method. {@link genesisHash} is what the dApp requested and, when the
  * wallet reported them, {@link walletGenesisHashes}.
  */
 export class DirectNetworkMismatchError extends SessionError {

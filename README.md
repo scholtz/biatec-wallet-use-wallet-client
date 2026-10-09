@@ -200,6 +200,8 @@ WalletConnect. Change which tab is pre-selected with `defaultMethod` (an explici
 > an info line.
 > Pass `projectId` to keep WalletConnect.
 >
+> **Direct and networks:** Direct works on every network (including custom ones): each request carries the genesis hash of your active network, the wallet shows it to the user and signs on it. A persisted Direct session survives `setActiveNetwork()`; the wallet's old "different network" error (`DirectNetworkMismatchError`, 4004) is now only seen with outdated wallet versions.
+
 > **Upgrading:** Direct-only setups (`walletconnect: false, liquid: false`) now also see the _Open Biatec Wallet_ button first instead of an immediately opened popup; pass `defaultMethod: 'direct'` or call `connect({ method: 'direct' })` to keep opening the popup immediately. The dialog now lists **Direct first and pre-selects it**; WalletConnect no longer auto-starts (its pairing begins when its tab is selected) unless it is the default. Integrators who want the QR first pass `defaultMethod: 'walletconnect'`; integrators with their own `onDisplayUri` UI keep WalletConnect as the default and are unaffected. The picker is skipped only when exactly **one** method is enabled. If you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`. With `onDisplayUri`, a picker-only overlay now appears unless exactly one method is enabled.
 
 ### Custom QR code instead of the built-in dialog

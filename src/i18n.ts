@@ -97,7 +97,7 @@ const en: BiatecTranslation = {
     'The wallet window was closed before you finished. Click Open Biatec Wallet to try again.',
   userRejected: 'You declined the connection in Biatec Wallet. You can try again.',
   wrongNetwork:
-    'Biatec Wallet is on a different network. Switch network in the wallet, then try again.',
+    'This version of Biatec Wallet cannot sign on this network. Reload the wallet page to update it, or use another connection method.',
   timedOut: 'Biatec Wallet did not respond in time. Try again.',
   showWalletWindow: 'Show wallet window',
   language: 'Language'
@@ -136,7 +136,8 @@ const cs: BiatecTranslation = {
   walletClosed:
     'Okno peněženky bylo zavřeno dříve, než jste skončili. Klikněte na Otevřít Biatec Wallet a zkuste to znovu.',
   userRejected: 'Připojení jste v Biatec Wallet odmítli. Můžete to zkusit znovu.',
-  wrongNetwork: 'Biatec Wallet je na jiné síti. Přepněte síť v peněžence a zkuste to znovu.',
+  wrongNetwork:
+    'Tato verze Biatec Wallet nemůže na této síti podepisovat. Načtěte stránku peněženky znovu, aby se aktualizovala, nebo použijte jiný způsob připojení.',
   timedOut: 'Biatec Wallet neodpověděla včas. Zkuste to znovu.',
   showWalletWindow: 'Zobrazit okno peněženky',
   language: 'Jazyk'
@@ -175,7 +176,8 @@ const sk: BiatecTranslation = {
   walletClosed:
     'Okno peňaženky bolo zavreté skôr, než ste skončili. Kliknite na Otvoriť Biatec Wallet a skúste to znova.',
   userRejected: 'Pripojenie ste v Biatec Wallet odmietli. Môžete to skúsiť znova.',
-  wrongNetwork: 'Biatec Wallet je na inej sieti. Prepnite sieť v peňaženke a skúste to znova.',
+  wrongNetwork:
+    'Táto verzia Biatec Wallet nemôže na tejto sieti podpisovať. Načítajte stránku peňaženky znova, aby sa aktualizovala, alebo použite iný spôsob pripojenia.',
   timedOut: 'Biatec Wallet neodpovedala včas. Skúste to znova.',
   showWalletWindow: 'Zobraziť okno peňaženky',
   language: 'Jazyk'
@@ -214,7 +216,8 @@ const es: BiatecTranslation = {
   walletClosed:
     'La ventana de la cartera se cerró antes de terminar. Haz clic en Abrir Biatec Wallet para intentarlo de nuevo.',
   userRejected: 'Rechazaste la conexión en Biatec Wallet. Puedes intentarlo de nuevo.',
-  wrongNetwork: 'Biatec Wallet está en otra red. Cambia de red en la cartera e inténtalo de nuevo.',
+  wrongNetwork:
+    'Esta versión de Biatec Wallet no puede firmar en esta red. Recarga la página de la cartera para actualizarla o usa otro método de conexión.',
   timedOut: 'Biatec Wallet no respondió a tiempo. Inténtalo de nuevo.',
   showWalletWindow: 'Mostrar ventana de la cartera',
   language: 'Idioma'
@@ -254,7 +257,7 @@ const hu: BiatecTranslation = {
     'A tárca ablaka bezárult, mielőtt végeztél volna. Kattints a Biatec Wallet megnyitása gombra az újrapróbáláshoz.',
   userRejected: 'Elutasítottad a kapcsolatot a Biatec Walletben. Újra megpróbálhatod.',
   wrongNetwork:
-    'A Biatec Wallet másik hálózaton van. Válts hálózatot a tárcában, majd próbáld újra.',
+    'A Biatec Wallet ezen verziója nem tud ezen a hálózaton aláírni. Töltsd újra a tárca oldalát a frissítéshez, vagy használj másik csatlakozási módot.',
   timedOut: 'A Biatec Wallet nem válaszolt időben. Próbáld újra.',
   showWalletWindow: 'Tárca ablakának megjelenítése',
   language: 'Nyelv'
@@ -293,7 +296,8 @@ const it: BiatecTranslation = {
   walletClosed:
     'La finestra del wallet è stata chiusa prima che finissi. Fai clic su Apri Biatec Wallet per riprovare.',
   userRejected: 'Hai rifiutato la connessione in Biatec Wallet. Puoi riprovare.',
-  wrongNetwork: 'Biatec Wallet è su una rete diversa. Cambia rete nel wallet, poi riprova.',
+  wrongNetwork:
+    'Questa versione di Biatec Wallet non può firmare su questa rete. Ricarica la pagina del wallet per aggiornarla oppure usa un altro metodo di connessione.',
   timedOut: 'Biatec Wallet non ha risposto in tempo. Riprova.',
   showWalletWindow: 'Mostra finestra del wallet',
   language: 'Lingua'
@@ -333,7 +337,7 @@ const nl: BiatecTranslation = {
     'Het walletvenster is gesloten voordat je klaar was. Klik op Biatec Wallet openen om het opnieuw te proberen.',
   userRejected: 'Je hebt de verbinding in Biatec Wallet geweigerd. Je kunt het opnieuw proberen.',
   wrongNetwork:
-    'Biatec Wallet staat op een ander netwerk. Wissel van netwerk in de wallet en probeer het opnieuw.',
+    'Deze versie van Biatec Wallet kan niet op dit netwerk ondertekenen. Laad de walletpagina opnieuw om te updaten, of gebruik een andere verbindingsmethode.',
   timedOut: 'Biatec Wallet reageerde niet op tijd. Probeer het opnieuw.',
   showWalletWindow: 'Walletvenster tonen',
   language: 'Taal'
@@ -373,7 +377,7 @@ const ru: BiatecTranslation = {
     'Окно кошелька было закрыто до завершения. Нажмите «Открыть Biatec Wallet», чтобы повторить.',
   userRejected: 'Вы отклонили подключение в Biatec Wallet. Можно попробовать ещё раз.',
   wrongNetwork:
-    'Biatec Wallet подключён к другой сети. Переключите сеть в кошельке и попробуйте снова.',
+    'Эта версия Biatec Wallet не может подписывать в этой сети. Перезагрузите страницу кошелька, чтобы обновить её, или используйте другой способ подключения.',
   timedOut: 'Biatec Wallet не ответил вовремя. Попробуйте ещё раз.',
   showWalletWindow: 'Показать окно кошелька',
   language: 'Язык'
@@ -412,7 +416,8 @@ const tr: BiatecTranslation = {
   walletClosed:
     "Cüzdan penceresi sen bitirmeden kapatıldı. Tekrar denemek için Biatec Wallet'ı aç düğmesine tıkla.",
   userRejected: "Bağlantıyı Biatec Wallet'ta reddettin. Tekrar deneyebilirsin.",
-  wrongNetwork: 'Biatec Wallet farklı bir ağda. Cüzdanda ağı değiştir ve tekrar dene.',
+  wrongNetwork:
+    'Bu Biatec Wallet sürümü bu ağda imzalayamaz. Güncellemek için cüzdan sayfasını yeniden yükle veya başka bir bağlantı yöntemi kullan.',
   timedOut: 'Biatec Wallet zamanında yanıt vermedi. Tekrar dene.',
   showWalletWindow: 'Cüzdan penceresini göster',
   language: 'Dil'
@@ -452,7 +457,7 @@ const af: BiatecTranslation = {
     'Die beursievenster is toegemaak voordat jy klaar was. Klik op Maak Biatec Wallet oop om weer te probeer.',
   userRejected: 'Jy het die verbinding in Biatec Wallet geweier. Jy kan weer probeer.',
   wrongNetwork:
-    "Biatec Wallet is op 'n ander netwerk. Skakel netwerk in die beursie oor en probeer weer.",
+    "Hierdie weergawe van Biatec Wallet kan nie op hierdie netwerk teken nie. Laai die beursie-bladsy weer om dit op te dateer, of gebruik 'n ander verbindingsmetode.",
   timedOut: 'Biatec Wallet het nie betyds geantwoord nie. Probeer weer.',
   showWalletWindow: 'Wys beursievenster',
   language: 'Taal'
