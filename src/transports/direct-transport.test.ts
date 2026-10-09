@@ -41,6 +41,11 @@ class FakeWindow {
   listeners = new Set<(event: FakeEvent) => void>()
   blocked = false
   location = { origin: DAPP_ORIGIN }
+  screenX?: number
+  screenY?: number
+  outerWidth?: number
+  outerHeight?: number
+  screen?: { availWidth?: number; availHeight?: number; availLeft?: number; availTop?: number }
   open = vi.fn((_url: string, _name: string, _features: string) => {
     if (this.blocked) return null
     const popup = new FakePopup()
@@ -322,6 +327,154 @@ describe('Direct transport — construction & options', () => {
   })
 })
 
+/** Opens a popup with the given fake window geometry and returns the feature string. */
+function popupFeaturesFor(
+  geometry: Partial<FakeWindow>,
+  direct: Partial<NonNullable<BiatecWalletOptions['direct']>> = {}
+): string {
+  Object.assign(win, geometry)
+  const { adapter } = createAdapter({ direct })
+  adapter.connect({ method: 'direct' }).catch(() => undefined)
+  return win.open.mock.calls[0][2]
+}
+
+function parseFeatures(features: string) {
+  const m = /^popup,width=(-?\d+),height=(-?\d+),left=(-?\d+),top=(-?\d+)$/.exec(features)
+  if (!m) throw new Error(`unexpected features: ${features}`)
+  return { width: +m[1], height: +m[2], left: +m[3], top: +m[4] }
+}
+
+describe('Direct transport - popup size and position', () => {
+  it('uses the preferred 1100x860 on a big screen, centered over the opener', () => {
+    const f = parseFeatures(
+      popupFeaturesFor({
+        screen: { availWidth: 1920, availHeight: 1080, availLeft: 0, availTop: 0 },
+        screenX: 100,
+        screenY: 50,
+        outerWidth: 1400,
+        outerHeight: 900
+      })
+    )
+    expect(f).toEqual({ width: 1100, height: 860, left: 250, top: 70 })
+  })
+
+  it('shrinks the height (and caps width at 90%) on a small laptop screen', () => {
+    const f = parseFeatures(
+      popupFeaturesFor({
+        screen: { availWidth: 1366, availHeight: 728 },
+        screenX: 0,
+        screenY: 0,
+        outerWidth: 1366,
+        outerHeight: 728
+      })
+    )
+    expect(f).toEqual({ width: 1100, height: 655, left: 133, top: 37 })
+  })
+
+  it('never goes below 640x560 unless the screen itself is smaller', () => {
+    const small = parseFeatures(popupFeaturesFor({ screen: { availWidth: 700, availHeight: 600 } }))
+    expect(small).toMatchObject({ width: 640, height: 560 })
+    expect(small.left).toBeGreaterThanOrEqual(0)
+    expect(small.left + small.width).toBeLessThanOrEqual(700)
+    expect(small.top + small.height).toBeLessThanOrEqual(600)
+  })
+
+  it('uses the whole screen when it is smaller than the minimum', () => {
+    const f = parseFeatures(popupFeaturesFor({ screen: { availWidth: 500, availHeight: 400 } }))
+    expect(f).toEqual({ width: 500, height: 400, left: 0, top: 0 })
+  })
+
+  it('keeps the popup inside a monitor left of the primary one', () => {
+    const f = parseFeatures(
+      popupFeaturesFor({
+        screen: { availWidth: 1920, availHeight: 1040, availLeft: -1920, availTop: 0 },
+        screenX: -2100,
+        screenY: -30,
+        outerWidth: 800,
+        outerHeight: 600
+      })
+    )
+    expect(f.left).toBe(-1920)
+    expect(f.top).toBe(0)
+    expect(f.left + f.width).toBeLessThanOrEqual(0)
+  })
+
+  it('keeps the popup inside a monitor right of and below the primary one', () => {
+    const f = parseFeatures(
+      popupFeaturesFor({
+        screen: { availWidth: 1280, availHeight: 984, availLeft: 1920, availTop: 40 },
+        screenX: 3100,
+        screenY: 900,
+        outerWidth: 600,
+        outerHeight: 500
+      })
+    )
+    expect(f.left + f.width).toBe(1920 + 1280)
+    expect(f.top + f.height).toBe(40 + 984)
+    expect(f.left).toBeGreaterThanOrEqual(1920)
+  })
+
+  it('falls back to 1100x860 centered on the host window without a screen object', () => {
+    const f = parseFeatures(
+      popupFeaturesFor({ screenX: 0, screenY: 0, outerWidth: 1500, outerHeight: 1000 })
+    )
+    expect(f).toEqual({ width: 1100, height: 860, left: 200, top: 70 })
+  })
+
+  it('without screen or window geometry the popup is placed at 0,0', () => {
+    expect(parseFeatures(popupFeaturesFor({}))).toEqual({
+      width: 1100,
+      height: 860,
+      left: 0,
+      top: 0
+    })
+  })
+
+  it('popupSize replaces the preferred size but is still screen-fit', () => {
+    const f = parseFeatures(
+      popupFeaturesFor(
+        { screen: { availWidth: 1920, availHeight: 1080 }, outerWidth: 1920, outerHeight: 1080 },
+        { popupSize: { width: 800, height: 600 } }
+      )
+    )
+    expect(f).toEqual({ width: 800, height: 600, left: 560, top: 240 })
+  })
+
+  it('popupSize larger than the screen is shrunk to 90%', () => {
+    const big = parseFeatures(
+      popupFeaturesFor(
+        { screen: { availWidth: 1000, availHeight: 800 } },
+        { popupSize: { width: 4000, height: 4000 } }
+      )
+    )
+    expect(big).toMatchObject({ width: 900, height: 720 })
+  })
+
+  it('validates popupSize', () => {
+    for (const popupSize of [
+      { width: 319, height: 600 },
+      { width: 600, height: 4001 },
+      { width: 600.5, height: 600 },
+      { width: Number.NaN, height: 600 },
+      { width: 600, height: Infinity }
+    ]) {
+      expect(() => createAdapter({ direct: { popupSize } })).toThrow(/popupSize/)
+    }
+    expect(() =>
+      createAdapter({ direct: { popupSize: { width: 320, height: 4000 } } })
+    ).not.toThrow()
+  })
+
+  it('popupFeatures still wins over popupSize', () => {
+    expect(
+      popupFeaturesFor(
+        {},
+        { popupFeatures: 'popup,width=300', popupSize: { width: 800, height: 600 } }
+      )
+    ).toBe('popup,width=300')
+  })
+})
+
 describe('Direct transport — connect', () => {
   it('opens the popup synchronously with the origin hint and stores the approved accounts', async () => {
     const { adapter } = createAdapter()
@@ -331,7 +484,7 @@ describe('Direct transport — connect', () => {
     const [url, name, features] = win.open.mock.calls[0]
     expect(url).toBe(`${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`)
     expect(name).toMatch(/^biatec-wallet-direct-[0-9a-f-]{36}$/)
-    expect(features).toMatch(/^popup,width=480,height=720,left=\d+,top=\d+$/)
+    expect(features).toMatch(/^popup,width=1100,height=860,left=\d+,top=\d+$/)
 
     fromWallet(readyMessage())
     await flush()

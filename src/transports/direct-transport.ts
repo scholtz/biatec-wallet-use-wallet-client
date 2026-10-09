@@ -30,6 +30,9 @@ import {
 import {
   BIATEC_WALLET_URL,
   DIRECT_POPUP_HEIGHT,
+  DIRECT_POPUP_MIN_HEIGHT,
+  DIRECT_POPUP_MIN_WIDTH,
+  DIRECT_POPUP_SCREEN_FRACTION,
   DIRECT_POPUP_WIDTH,
   DIRECT_ROUTE,
   DIRECT_WINDOW_NAME
@@ -75,10 +78,16 @@ export interface DirectTransportOptions {
    */
   walletUrl?: string
   /**
-   * `window.open` feature string. Defaults to a centered 480x720 popup. Must not contain
-   * `noopener` / `noreferrer` (they sever the channel to the wallet).
+   * `window.open` feature string. Defaults to a large popup (preferred 1100x860, shrunk to fit
+   * the available screen) centered over the opener. Must not contain `noopener` / `noreferrer`
+   * (they sever the channel to the wallet). Wins over `popupSize`.
    */
   popupFeatures?: string
+  /**
+   * Preferred popup size in CSS pixels (integers within 320..4000), replacing the default
+   * 1100x860. It is still shrunk to fit the available screen, centered and kept on screen.
+   */
+  popupSize?: { width: number; height: number }
   /** dApp metadata announced to the wallet in `enable`. Defaults are read from the page. */
   metadata?: Partial<LiquidPeerMetadata>
   /** ARC-0027 provider id carried in every message. Default: a random UUID per adapter instance. */
@@ -127,6 +136,12 @@ interface HostWindow {
   screenY?: number
   outerWidth?: number
   outerHeight?: number
+  screen?: {
+    availWidth?: number
+    availHeight?: number
+    availLeft?: number
+    availTop?: number
+  }
 }
 
 interface Deferred<T> {
@@ -491,6 +506,7 @@ export class DirectTransport {
   private readonly walletOrigin: string
   private readonly walletBase: string
   private readonly popupFeatures: string | undefined
+  private readonly popupSize: { width: number; height: number }
   private readonly dappMetadata: LiquidPeerMetadata
   private readonly providerId: string
   private readonly enableSignData: boolean
@@ -518,6 +534,21 @@ export class DirectTransport {
         )
       }
       this.popupFeatures = options.popupFeatures
+    }
+    this.popupSize = { width: DIRECT_POPUP_WIDTH, height: DIRECT_POPUP_HEIGHT }
+    if (options.popupSize !== undefined) {
+      const { width, height } = options.popupSize
+      for (const [label, value] of [
+        ['width', width],
+        ['height', height]
+      ] as const) {
+        if (!Number.isInteger(value) || value < 320 || value > 4000) {
+          throw new Error(
+            `direct.popupSize.${label} must be an integer between 320 and 4000, got ${String(value)}`
+          )
+        }
+      }
+      this.popupSize = { width, height }
     }
     const base = getWindowMetadata()
     this.dappMetadata = {
@@ -548,20 +579,35 @@ export class DirectTransport {
     if (this.popupFeatures !== undefined) return this.popupFeatures
     const num = (value: number | undefined, fallback: number) =>
       typeof value === 'number' && Number.isFinite(value) ? value : fallback
-    const left = Math.max(
-      0,
-      Math.round(
-        num(host.screenX, 0) + (num(host.outerWidth, DIRECT_POPUP_WIDTH) - DIRECT_POPUP_WIDTH) / 2
+    const screen = host.screen
+    const availWidth = num(screen?.availWidth, 0)
+    const availHeight = num(screen?.availHeight, 0)
+    const hasScreen = availWidth > 0 && availHeight > 0
+    // Shrink to ~90% of the available screen (so the dApp stays visible behind), but not below
+    // the minimum unless the screen itself is smaller. A smaller preferred size is kept as is.
+    const fit = (preferred: number, avail: number, min: number) =>
+      Math.min(
+        preferred,
+        Math.max(Math.round(avail * DIRECT_POPUP_SCREEN_FRACTION), Math.min(min, avail))
       )
-    )
-    const top = Math.max(
-      0,
-      Math.round(
-        num(host.screenY, 0) +
-          (num(host.outerHeight, DIRECT_POPUP_HEIGHT) - DIRECT_POPUP_HEIGHT) / 2
-      )
-    )
-    return `popup,width=${DIRECT_POPUP_WIDTH},height=${DIRECT_POPUP_HEIGHT},left=${left},top=${top}`
+    const width = hasScreen
+      ? fit(this.popupSize.width, availWidth, DIRECT_POPUP_MIN_WIDTH)
+      : this.popupSize.width
+    const height = hasScreen
+      ? fit(this.popupSize.height, availHeight, DIRECT_POPUP_MIN_HEIGHT)
+      : this.popupSize.height
+    let left = Math.round(num(host.screenX, 0) + (num(host.outerWidth, width) - width) / 2)
+    let top = Math.round(num(host.screenY, 0) + (num(host.outerHeight, height) - height) / 2)
+    if (hasScreen) {
+      const minLeft = num(screen?.availLeft, 0)
+      const minTop = num(screen?.availTop, 0)
+      left = Math.min(Math.max(left, minLeft), minLeft + availWidth - width)
+      top = Math.min(Math.max(top, minTop), minTop + availHeight - height)
+    } else {
+      left = Math.max(0, left)
+      top = Math.max(0, top)
+    }
+    return `popup,width=${width},height=${height},left=${left},top=${top}`
   }
 
   /**

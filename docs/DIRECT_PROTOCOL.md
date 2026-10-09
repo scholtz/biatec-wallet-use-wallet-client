@@ -58,10 +58,13 @@ verifies it against `event.origin` of the first request (see §6).
 window.open(
   `${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`,
   `biatec-wallet-direct-${uuid}`,
-  'popup,width=480,height=720,left=<centered>,top=<centered>'
+  'popup,width=1100,height=860,left=<centered>,top=<centered>'
 )
 ```
 
+- The size is a **recommendation**: the SDK asks for 1100x860, shrunk to ~90% of the available
+  screen and centered over the opener, but a dApp may use any size (`direct.popupSize` /
+  `direct.popupFeatures`). The wallet adapts to any popup size and enlarges a small popup itself.
 - The call MUST be made **synchronously** within a user gesture (a click handler): no `await`
   before it. Otherwise browsers return `null` (popup blocked). The SDK maps `null` to
   `PopupBlockedError`.
