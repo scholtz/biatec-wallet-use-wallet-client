@@ -280,9 +280,8 @@ biatec({
 ```
 
 With several methods enabled (the default), calling `wallet.connect()` with no arguments shows a
-**built-in, modern dialog**: a method selector (WalletConnect / Liquid Auth / Biatec Direct) next
-to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — WalletConnect selected by default so its QR appears
-immediately, with a tab to switch to Liquid Auth on demand. It follows the system's light/dark
+**built-in, modern dialog**: a method selector (Biatec Direct / WalletConnect / Liquid Auth) next
+to a live QR code (or an _Open Biatec Wallet_ button, for Direct) for whichever method is selected — Biatec Direct is listed first and selected by default (it waits for the _Open Biatec Wallet_ click); the WalletConnect and Liquid Auth tabs connect on demand. Pass `defaultMethod: 'walletconnect'` to show the QR first (the default whenever you pass your own `onDisplayUri`). It follows the system's light/dark
 theme automatically. Leave it as-is unless the user asks for a custom picker UI — in that case,
 build your own method-selection UI and call `wallet.connect({ method: 'liquid' })` or
 `wallet.connect({ method: 'walletconnect' })` directly to skip the built-in one. If the user only
@@ -315,7 +314,7 @@ Rules to enforce when you wire this up:
   `PopupBlockedError` — ask the user to allow popups and click again.
 - Never set `Cross-Origin-Opener-Policy: same-origin` on the dApp (it breaks the popup channel);
   `same-origin-allow-popups` or no header is fine.
-- `projectId` is only optional when `walletconnect: false` is passed. `defaultMethod: 'direct'`
+- `projectId` is only optional when `walletconnect: false` is passed. an explicit `defaultMethod: 'direct'`
   pre-selects (and, on `connect()`, immediately starts) the popup — only do that when `connect()`
   runs from a click.
 - Do not set `direct.walletUrl` in production (it is for local wallet development, must be https

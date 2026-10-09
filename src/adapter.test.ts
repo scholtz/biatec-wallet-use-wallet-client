@@ -98,7 +98,7 @@ describe('BiatecWalletAdapter — dispatch', () => {
 
     expect(connectDialog.openConnectDialog).toHaveBeenCalledTimes(1)
     const options = vi.mocked(connectDialog.openConnectDialog).mock.calls[0][0]
-    expect(options.methods).toEqual(['walletconnect', 'liquid', 'direct'])
+    expect(options.methods).toEqual(['direct', 'walletconnect', 'liquid'])
     expect(options.defaultMethod).toBe('walletconnect')
     expect(mocks.signClient.connect).toHaveBeenCalledTimes(1)
   })
@@ -349,14 +349,81 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
     for (const l of [...listeners]) l({ origin: WALLET_ORIGIN, source, data })
   }
 
-  it('shows all three methods in order, walletconnect pre-selected by default', async () => {
+  it('shows all three methods in order, direct pre-selected by default without opening it', async () => {
     const { adapter } = createDialogAdapter()
     mocks.signClient.connect.mockReturnValue(new Promise(() => undefined))
     void adapter.connect()
-    expect(dialogOptions.methods).toEqual(['walletconnect', 'liquid', 'direct'])
-    expect(dialogOptions.defaultMethod).toBe('walletconnect')
-    // Direct is not started merely because it is listed.
+    expect(dialogOptions.methods).toEqual(['direct', 'walletconnect', 'liquid'])
+    expect(dialogOptions.defaultMethod).toBe('direct')
+    // An implicit Direct default shows the idle panel: nothing starts until the button click.
     expect(openCalls).toBe(0)
+    expect(dialogSetState).not.toHaveBeenCalled()
+    expect(mocks.signClient.connect).not.toHaveBeenCalled()
+    dialogOptions.onSelectMethod('direct')
+    expect(openCalls).toBe(1)
+  })
+
+  it('starts walletconnect lazily when its tab is selected after the implicit direct default', () => {
+    const { adapter } = createDialogAdapter()
+    mocks.signClient.connect.mockReturnValue(new Promise(() => undefined))
+    void adapter.connect()
+    expect(mocks.signClientInit).not.toHaveBeenCalled()
+    dialogOptions.onSelectMethod('walletconnect')
+    expect(dialogSetState).toHaveBeenCalledWith('walletconnect', { status: 'connecting' })
+    expect(openCalls).toBe(0)
+  })
+
+  it('pre-selects and auto-starts walletconnect when defaultMethod is walletconnect', () => {
+    const { adapter } = createDialogAdapter({ defaultMethod: 'walletconnect' })
+    mocks.signClient.connect.mockReturnValue(new Promise(() => undefined))
+    void adapter.connect()
+    expect(dialogOptions.defaultMethod).toBe('walletconnect')
+    expect(dialogSetState).toHaveBeenCalledWith('walletconnect', { status: 'connecting' })
+    expect(openCalls).toBe(0)
+  })
+
+  it('keeps walletconnect as the auto-started default when the integrator has their own onDisplayUri', async () => {
+    const onDisplayUri = vi.fn()
+    const { adapter } = createAdapter({ onDisplayUri })
+    mocks.signClient.connect.mockResolvedValue({
+      uri: 'wc:uri',
+      approval: () => new Promise(() => undefined)
+    })
+    void adapter.connect()
+    expect(dialogOptions.methods).toEqual(['direct', 'walletconnect', 'liquid'])
+    expect(dialogOptions.defaultMethod).toBe('walletconnect')
+    await vi.waitFor(() => expect(onDisplayUri).toHaveBeenCalledWith('wc:uri', expect.anything()))
+    expect(openCalls).toBe(0)
+  })
+
+  it('defaults to walletconnect when direct is disabled, liquid when only liquid remains', () => {
+    const a = createDialogAdapter({ direct: false })
+    mocks.signClient.connect.mockReturnValue(new Promise(() => undefined))
+    void a.adapter.connect()
+    expect(dialogOptions.methods).toEqual(['walletconnect', 'liquid'])
+    expect(dialogOptions.defaultMethod).toBe('walletconnect')
+    expect(dialogSetState).toHaveBeenCalledWith('walletconnect', { status: 'connecting' })
+
+    const b = createDialogAdapter({ direct: false, walletconnect: false })
+    void b.adapter.connect().catch(() => undefined)
+    expect(dialogOptions.methods).toEqual(['liquid'])
+    expect(dialogOptions.defaultMethod).toBe('liquid')
+  })
+
+  it('defaults to direct without auto-opening when walletconnect is disabled', () => {
+    const { adapter } = createDialogAdapter({ walletconnect: false })
+    void adapter.connect().catch(() => undefined)
+    expect(dialogOptions.methods).toEqual(['direct', 'liquid'])
+    expect(dialogOptions.defaultMethod).toBe('direct')
+    expect(openCalls).toBe(0)
+    dialogOptions.onSelectMethod('direct')
+    expect(openCalls).toBe(1)
+  })
+
+  it('opens the popup immediately for connect({ method: "direct" })', () => {
+    const { adapter } = createDialogAdapter()
+    void adapter.connect({ method: 'direct' }).catch(() => undefined)
+    expect(openCalls).toBe(1)
   })
 
   it('honours defaultMethod and opens the direct popup synchronously inside connect()', () => {
@@ -370,7 +437,7 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
   })
 
   it('logs the raw error of a failed method (the dialog only shows generic copy)', async () => {
-    const { adapter } = createDialogAdapter()
+    const { adapter } = createDialogAdapter({ defaultMethod: 'walletconnect' })
     const warn = vi.spyOn(adapter['logger'], 'warn').mockImplementation(() => undefined)
     mocks.signClient.connect.mockRejectedValue(new Error('relay exploded'))
     void adapter.connect().catch(() => undefined)
@@ -460,7 +527,7 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
   })
 
   it('closes the direct popup when another method wins', async () => {
-    const { adapter } = createDialogAdapter()
+    const { adapter } = createDialogAdapter({ defaultMethod: 'walletconnect' })
     mocks.signClient.connect.mockResolvedValue({
       uri: 'wc:uri',
       approval: () =>
@@ -508,6 +575,8 @@ describe('BiatecWalletAdapter — direct method & dialog', () => {
     expect(dialogOptions.methods).toEqual(['direct'])
     expect(dialogOptions.defaultMethod).toBe('direct')
     expect(mocks.signClientInit).not.toHaveBeenCalled()
+    expect(openCalls).toBe(0)
+    dialogOptions.onSelectMethod('direct')
     expect(openCalls).toBe(1)
   })
 
@@ -561,7 +630,13 @@ describe('BiatecWalletAdapter — losing transports are aborted', () => {
         })
     })
 
-    const { adapter } = createAdapter({ liquid: false }, undefined, { withOnDisplayUri: false })
+    const { adapter } = createAdapter(
+      { liquid: false, defaultMethod: 'walletconnect' },
+      undefined,
+      {
+        withOnDisplayUri: false
+      }
+    )
     const connecting = adapter.connect()
     await vi.waitFor(() => expect(typeof approveWalletConnect).toBe('function'))
     dialogOptions.onSelectMethod('direct')

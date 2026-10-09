@@ -16,7 +16,7 @@ test.beforeEach(async ({ page }) => {
   await page.goto('/')
 })
 
-test('clicking Connect opens the built-in dialog with WalletConnect selected and its content visible', async ({
+test('clicking Connect opens the built-in dialog with Biatec Direct selected and idle', async ({
   page
 }) => {
   const pageErrors: string[] = []
@@ -28,13 +28,23 @@ test('clicking Connect opens the built-in dialog with WalletConnect selected and
   await expect(panel).toBeVisible()
 
   // The vanilla-ts example passes no `onDisplayUri`, so the built-in dialog renders its full
-  // single-window UI: a method selector on the left, both methods listed, WalletConnect
-  // selected by default, and that method's content (spinner, then QR/link) on the right —
-  // never a second, separate dialog.
+  // single-window UI: a method selector on the left (Direct first, then WalletConnect and
+  // Liquid Auth), Direct selected by default, and that method's content on the right — never
+  // a second, separate dialog. Direct stays idle (an "Open Biatec Wallet" button, no popup)
+  // until the button is clicked.
   const methods = page.locator('.bcd-method')
   await expect(methods).toHaveCount(3)
-  await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
+  await expect(methods.nth(0)).toContainText('Biatec Direct')
+  await expect(methods.nth(1)).toContainText('WalletConnect')
+  await expect(methods.nth(2)).toContainText('Liquid Auth')
+  await expect(page.locator('.bcd-method--active')).toContainText('Biatec Direct')
   await expect(panel.locator('.bcd-content')).toBeVisible()
+  await expect(page.locator('.bcd-open')).toBeVisible()
+  expect(page.context().pages()).toHaveLength(1)
+
+  // WalletConnect starts lazily when its tab is selected.
+  await page.click('[data-method="walletconnect"]')
+  await expect(page.locator('.bcd-method--active')).toContainText('WalletConnect')
   await expect(panel.locator('.bcd-content-state, .bcd-qr-tile')).toBeVisible()
 
   expect(pageErrors).toEqual([])
@@ -74,8 +84,8 @@ test('cancelling the dialog closes it and leaves the app usable', async ({ page 
 test('pressing Enter on "Open Biatec Wallet" keeps keyboard focus inside the dialog', async ({
   page
 }) => {
+  // Direct is the pre-selected tab, so its open button already holds the initial focus.
   await page.click('#connect')
-  await page.click('[data-method="direct"]')
   await expect(page.locator('.bcd-open')).toBeFocused()
   await page.keyboard.press('Enter')
   // The panel re-renders into its "connecting" state; focus must land on the new primary button.

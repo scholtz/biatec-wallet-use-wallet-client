@@ -143,17 +143,16 @@ new WalletManager({ wallets: [biatec({ projectId }), pera(), defly()] })
 | `chains`          | `string[]`                                                           | `[]`                                       | WalletConnect only: extra CAIP-2 chain ids to request as optional chains (every configured network's `caipChainId` is requested automatically).                             |
 | `liquid`          | `BiatecLiquidTransportOptions \| false`                              | enabled, Biatec defaults                   | Liquid Auth transport config, or `false` to disable it (pass `direct: false` too to always use WalletConnect). See [docs/API.md](docs/API.md#biatecliquidtransportoptions). |
 | `direct`          | `BiatecDirectTransportOptions \| false`                              | enabled, Biatec defaults                   | Direct (popup + postMessage) transport config, or `false` to disable it. See [docs/DIRECT_PROTOCOL.md](docs/DIRECT_PROTOCOL.md).                                            |
-| `defaultMethod`   | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'walletconnect'`                          | Method pre-selected in the connect dialog (must be enabled).                                                                                                                |
+| `defaultMethod`   | `'walletconnect' \| 'liquid' \| 'direct'`                            | `'direct'` (see below)                     | Method pre-selected in the connect dialog (must be enabled).                                                                                                                |
 | `displayMetadata` | `Partial<{ name; icon }>`                                            | Biatec name + logo                         | Override how the wallet appears in your wallet picker.                                                                                                                      |
 
 ### Choosing a connection method
 
 When several transports are enabled (the default is all three), `connect()` shows a modern,
-glassmorphic dialog — a method selector (WalletConnect / Liquid Auth / Biatec Direct) next to a
-live QR code / link for whichever method is selected. WalletConnect is selected by default, so its
-QR is visible immediately; switching to the Liquid Auth tab connects that transport on demand, and
-the Direct tab shows an **Open Biatec Wallet** button (a popup can only be opened from a click, so
-it is never opened just by selecting the tab). It follows the system's
+glassmorphic dialog — a method selector (Biatec Direct / WalletConnect / Liquid Auth) next to a
+live QR code / link for whichever method is selected. Biatec Direct is listed first and selected by
+default: it shows an **Open Biatec Wallet** button (a popup can only be opened from a click, so
+it is never opened just by selecting the tab or by `connect()` itself). Switching to the WalletConnect or Liquid Auth tab connects that transport on demand. If you pass your own `onDisplayUri`, or disable Direct, the default is WalletConnect (then Liquid Auth) and it starts immediately. It follows the system's
 light/dark theme automatically (or an explicit `data-theme` on `<html>`, if your page sets one),
 and it's translated into every language Biatec Wallet itself ships — auto-detected from the
 browser, or force one with `biatec({ projectId, locale: 'sk' })` (see
@@ -161,9 +160,9 @@ browser, or force one with `biatec({ projectId, locale: 'sk' })` (see
 `connect({ method: 'liquid' })`, `connect({ method: 'walletconnect' })` or
 `connect({ method: 'direct' })`, or disable transports you don't want:
 `biatec({ projectId, liquid: false, direct: false })` makes `connect()` always go straight to
-WalletConnect. Change which tab is pre-selected with `defaultMethod`.
+WalletConnect. Change which tab is pre-selected with `defaultMethod` (an explicit `defaultMethod: 'direct'` opens the popup immediately inside `connect()`, so call it from a click).
 
-> **Upgrading:** the picker is skipped only when exactly **one** method is enabled. If you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`. With `onDisplayUri`, a picker-only overlay now appears unless exactly one method is enabled.
+> **Upgrading:** the dialog now lists **Direct first and pre-selects it**; WalletConnect no longer auto-starts (its pairing begins when its tab is selected) unless it is the default. Integrators who want the QR first pass `defaultMethod: 'walletconnect'`; integrators with their own `onDisplayUri` UI keep WalletConnect as the default and are unaffected. The picker is skipped only when exactly **one** method is enabled. If you previously passed only `liquid: false` to always use WalletConnect, also pass `direct: false`. With `onDisplayUri`, a picker-only overlay now appears unless exactly one method is enabled.
 
 ### Custom QR code instead of the built-in dialog
 
