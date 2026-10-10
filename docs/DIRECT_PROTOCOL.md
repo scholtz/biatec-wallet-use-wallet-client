@@ -63,12 +63,15 @@ verifies it against `event.origin` of the first request (see §6).
 
 ```
 window.open(
-  `${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`,
+  `${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}&lang=${LOCALE}`,
   `biatec-wallet-direct-${uuid}`,
   'popup,width=1100,height=860,left=<centered>,top=<centered>'
 )
 ```
 
+- `lang` is the language the dApp (or the user, in the connect dialog) selected: one of the
+  adapter's `SUPPORTED_LOCALES` (`af cs en es hu it nl ru sk tr`), read each time a popup opens.
+  The wallet SHOULD open in that language; it is a hint, never part of the trust decision.
 - The size is a **recommendation**: the SDK asks for 1100x860, shrunk to ~90% of the available
   screen and centered over the opener, but a dApp may use any size (`direct.popupSize` /
   `direct.popupFeatures`). The wallet adapts to any popup size and enlarges a small popup itself.
