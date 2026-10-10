@@ -2327,3 +2327,111 @@ describe('Direct transport — abort during response processing', () => {
     expect(adapter.isConnected).toBe(false)
   })
 })
+
+describe('Direct transport — every account type (multisig, post-quantum, pre-signed)', () => {
+  const cosigner = algosdk.generateAccount()
+  const msigParams: algosdk.MultisigMetadata = {
+    version: 1,
+    threshold: 2,
+    addrs: [ADDR1, ADDR2, cosigner.addr.toString()]
+  }
+  const MSIG = algosdk.multisigAddress(msigParams).toString()
+  const pqKey = new Uint8Array(1793).fill(7)
+  const pqSig = new Uint8Array(1280).fill(9)
+  const scheme = new Uint8Array([0x66, 0x31])
+
+  /** A connected adapter whose accounts include the given extra addresses. */
+  async function connectWithSpecial(extra: string[]) {
+    const ctx = createAdapter()
+    const { connecting, request } = await startConnect(ctx.adapter)
+    fromWallet(
+      response(
+        request,
+        LiquidReference.enableResponse,
+        enableResult(request, {
+          accounts: [{ address: ADDR1 }, ...extra.map((address) => ({ address }))]
+        })
+      )
+    )
+    await connecting
+    return ctx
+  }
+
+  async function sign(adapter: BiatecWalletAdapter, txn: algosdk.Transaction, entry: string) {
+    const { promise, request } = await readyAndRequest(() => adapter.signTransactions([txn]))
+    fromWallet(
+      response(request, LiquidReference.signTransactionsResponse, {
+        providerId: 'w',
+        stxns: [entry]
+      })
+    )
+    return { promise, request }
+  }
+
+  it('returns a partially signed multisig blob (far larger than 64 bytes) as is, not as a raw signature', async () => {
+    const { adapter } = await connectWithSpecial([MSIG])
+    const txn = makePayment(MSIG, STRANGER)
+    const blob = algosdk.signMultisigTransaction(txn, msigParams, account1.sk).blob
+    expect(blob.length).toBeGreaterThan(64)
+    const { promise, request } = await sign(adapter, txn, toBase64Url(blob))
+    // The adapter sends only the unsigned txn: the wallet knows the multisig parameters itself.
+    expect(request.params.txns).toEqual([{ txn: toBase64Url(txn.toByte()) }])
+    const [result] = await promise
+    expect(result).toEqual(blob)
+    expect(algosdk.decodeSignedTransaction(result!).msig?.subsig).toHaveLength(3)
+  })
+
+  it('rejects a multisig blob of a different transaction', async () => {
+    const { adapter } = await connectWithSpecial([MSIG])
+    const txn = makePayment(MSIG, STRANGER)
+    const other = makePayment(MSIG, STRANGER, 5)
+    const blob = algosdk.signMultisigTransaction(other, msigParams, account1.sk).blob
+    const { promise } = await sign(adapter, txn, toBase64Url(blob))
+    await expect(promise).rejects.toThrow(/does not match/)
+  })
+
+  it('accepts a full signed post-quantum (pqsig) blob and does not mistake it for a raw signature', async () => {
+    const pqAddr = algosdk.addressFromPQKey(scheme, pqKey).address.toString()
+    const { adapter } = await connectWithSpecial([pqAddr])
+    const txn = makePayment(pqAddr, STRANGER)
+    const blob = algosdk.encodeMsgpack(
+      new algosdk.SignedTransaction({ txn, pqsig: { sch: scheme, slt: 0, pk: pqKey, sig: pqSig } })
+    )
+    expect(blob.length).toBeGreaterThan(3000)
+    const { promise } = await sign(adapter, txn, toBase64Url(blob))
+    const [result] = await promise
+    expect(result).toEqual(blob)
+    expect(algosdk.decodeSignedTransaction(result!).pqsig?.sig).toEqual(pqSig)
+  })
+
+  it('rejects a pqsig blob of a different transaction', async () => {
+    const pqAddr = algosdk.addressFromPQKey(scheme, pqKey).address.toString()
+    const { adapter } = await connectWithSpecial([pqAddr])
+    const txn = makePayment(pqAddr, STRANGER)
+    const blob = algosdk.encodeMsgpack(
+      new algosdk.SignedTransaction({
+        txn: makePayment(pqAddr, STRANGER, 77),
+        pqsig: { sch: scheme, slt: 0, pk: pqKey, sig: pqSig }
+      })
+    )
+    const { promise } = await sign(adapter, txn, toBase64Url(blob))
+    await expect(promise).rejects.toThrow(/does not match/)
+  })
+
+  it('treats exactly 64 bytes as a raw signature and verifies it (a bogus one is rejected)', async () => {
+    const { adapter } = await connectWithSpecial([MSIG])
+    const txn = makePayment(MSIG, STRANGER)
+    const { promise } = await sign(adapter, txn, toBase64Url(new Uint8Array(64).fill(1)))
+    await expect(promise).rejects.toThrow(/invalid signature/)
+  })
+
+  it('leaves an already signed input untouched: no popup and a null result, even for a multisig sender', async () => {
+    const { adapter } = await connectWithSpecial([MSIG])
+    const txn = makePayment(MSIG, STRANGER)
+    const preSigned = algosdk.signMultisigTransaction(txn, msigParams, account1.sk).blob
+    win.open.mockClear()
+    const result = await adapter.signTransactions([preSigned])
+    expect(result).toEqual([null])
+    expect(win.open).not.toHaveBeenCalled()
+  })
+})

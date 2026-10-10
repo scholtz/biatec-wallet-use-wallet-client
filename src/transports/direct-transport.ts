@@ -286,6 +286,16 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
   refuse(`Transaction type "${type}"`)
 }
 
+/**
+ * Whether decoded msgpack is a signed transaction of ANY kind. use-wallet's isSignedTxn only
+ * recognises an ed25519 sig; a pre-signed multisig (msig), logic-signature (lsig) or
+ * post-quantum (pqsig) transaction would otherwise be decoded as unsigned and throw.
+ */
+function isAlreadySigned(raw: unknown): boolean {
+  if (isSignedTxn(raw)) return true
+  return isRecord(raw) && isRecord(raw.txn) && ('msig' in raw || 'lsig' in raw || 'pqsig' in raw)
+}
+
 /** Per signTransactions call: memoised chain lookups and rekeys made earlier in the group. */
 interface VerifyState {
   lookups: Map<string, Promise<string | undefined>>
@@ -759,7 +769,7 @@ export class DirectTransport {
     const decoded = isTransactionArray(txnGroup)
       ? flattenTxnGroup(txnGroup).map((txn) => ({ txn, isSigned: false }))
       : flattenTxnGroup(txnGroup as Uint8Array[]).map((bytes) => {
-          const isSigned = isSignedTxn(algosdk.msgpackRawDecode(bytes))
+          const isSigned = isAlreadySigned(algosdk.msgpackRawDecode(bytes))
           const txn = isSigned
             ? algosdk.decodeSignedTransaction(bytes).txn
             : algosdk.decodeUnsignedTransaction(bytes)
