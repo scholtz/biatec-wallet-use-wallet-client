@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.5.0
+
+### Minor Changes
+
+- [#14](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/14) [`1e6c3f5`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/1e6c3f5356ea9d6c533d73dcf426b83461c54f5e) Thanks [@scholtz](https://github.com/scholtz)! - Direct: the wallet popup now opens in the language of the dApp. `/direct` gets a `lang` query parameter with the adapter's current locale (the `locale` option, a live change of it, or the language the user picked in the connect dialog), so a dApp in Slovak no longer opens the wallet in English. Wallets that do not know `lang` ignore it.
+
+### Patch Changes
+
+- [#12](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/12) [`4da6192`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/4da619263d34a99607c18ae90ac034be34cd4451) Thanks [@scholtz](https://github.com/scholtz)! - Direct: a pre-signed transaction (a Uint8Array input) that carries a multisig (`msig`), logic signature (`lsig`) or post-quantum (`pqsig`) signature is now recognised as already signed (`null` result, no popup) instead of failing to decode as an unsigned transaction. Added unit tests for large multisig and Falcon (`pqsig`) signed-transaction replies.
+
 ## 0.4.0
 
 ### Minor Changes

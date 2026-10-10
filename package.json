@@ -1,6 +1,6 @@
 {
   "name": "biatec-wallet-use-wallet-client",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "description": "Biatec Wallet adapter for @txnlab/use-wallet v5 — Direct (popup + postMessage, no relay) and Liquid Auth transports by default, plus optional WalletConnect v2 (needs a project id) with ARC-0001 transaction signing and ARC-0060 data signing",
   "author": "Scholtz & Co (Biatec)",
   "license": "MIT",
