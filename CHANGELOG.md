@@ -1,5 +1,32 @@
 # Changelog
 
+## 0.4.0
+
+### Minor Changes
+
+- [#11](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/11) [`435a695`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/435a6955d5810da6386a4953f745c48284ca09c7) Thanks [@scholtz](https://github.com/scholtz)! - Biatec Direct now works on every network. A persisted Direct session is no longer dropped on resume when the dApp's active network differs from the one it was connected on (the stored `genesisHash` is informational), and the early `capabilities.genesisHashes` check is gone. The legacy wallet error 4004 (`DirectNetworkMismatchError`) is still handled, but its message and the localized `wrongNetwork` dialog copy now tell the user to reload the wallet page or use another connection method instead of asking to switch network.
+
+- [#9](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/9) [`736524b`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/736524b5cb9c200411cd87c913ac5e252023b27a) Thanks [@scholtz](https://github.com/scholtz)! - The built-in connect dialog now lists Biatec Direct first (order: Direct, WalletConnect, Liquid Auth) and pre-selects it when you did not pass `defaultMethod` and the dialog shows content (no `onDisplayUri`). A default of Direct that was only chosen implicitly never opens the popup by itself: `connect()` shows the "Open Biatec Wallet" button and the popup opens on that click. An explicit `defaultMethod: 'direct'` or `connect({ method: 'direct' })` still opens it immediately.
+  
+  Migration: WalletConnect no longer starts automatically unless it is the default. To show the WalletConnect QR first, pass `defaultMethod: 'walletconnect'`. Integrators with their own `onDisplayUri` UI, or with Direct disabled, keep WalletConnect (else Liquid Auth) as the default and need no change. Direct-only setups (`walletconnect: false, liquid: false`) now also see the _Open Biatec Wallet_ button first instead of an immediately opened popup; pass `defaultMethod: 'direct'` or call `connect({ method: 'direct' })` to keep opening the popup immediately.
+
+- [#10](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/10) [`4c2b0c0`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/4c2b0c0e86eb39269d256e303c4d93dc2f8bf439) Thanks [@scholtz](https://github.com/scholtz)! - `projectId` is now optional, and `biatec()` can be called with no options. Without a (non-empty)
+  `projectId` the WalletConnect transport is simply not enabled, so the default integration offers
+  only Biatec Direct and Liquid Auth. WalletConnect stays available by passing
+  `biatec({ projectId })`; it is currently the only method that connects a wallet on a remote device
+  for key types Liquid Auth does not support (post-quantum, Ledger and multisig accounts).
+  
+  Migration: previously a missing `projectId` threw `Missing required option: projectId`. Now it
+  silently means no WalletConnect. If you forgot the id in a setup that relies on WalletConnect, your
+  users will see only the Direct and Liquid Auth tabs (a warning is logged when `projectId` is passed but empty/undefined, e.g. an unset env var, or when `relayUrl`/`chains` are set without one). `defaultMethod: 'walletconnect'` without a `projectId`, or
+  disabling every method, still throws, now with a message that explains the missing `projectId`. A
+  persisted WalletConnect session is dropped cleanly on reload when WalletConnect is no longer
+  enabled. The docs, examples and integration skill are updated accordingly.
+
+### Patch Changes
+
+- [#7](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/7) [`dc78b66`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/dc78b66a69705ede440132cbdb07f9f9a670bd82) Thanks [@scholtz](https://github.com/scholtz)! - Biatec Direct: open the wallet popup much larger (preferred 1100x860, shrunk to 90% of the available screen, centered over the opener and kept on screen) instead of 480x720. New optional `direct.popupSize` sets the preferred size; `direct.popupFeatures` still overrides everything.
+
 ## 0.3.1
 
 ### Patch Changes
