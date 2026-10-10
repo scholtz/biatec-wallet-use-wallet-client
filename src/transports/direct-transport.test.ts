@@ -282,7 +282,10 @@ describe('Direct transport — construction & options', () => {
 
   it('warns exactly once for a walletUrl override and pins that origin', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => undefined)
-    const { adapter } = createAdapter({ direct: { walletUrl: 'http://localhost:8080' } })
+    const { adapter } = createAdapter({
+      locale: 'en',
+      direct: { walletUrl: 'http://localhost:8080' }
+    })
     expect(warn).toHaveBeenCalledTimes(1)
     expect(String(warn.mock.calls[0][0])).toMatch(/non-default wallet origin/)
     expect(adapter.directWalletOrigin).toBe('http://localhost:8080')
@@ -290,7 +293,7 @@ describe('Direct transport — construction & options', () => {
     const connecting = adapter.connect({ method: 'direct' })
     connecting.catch(() => undefined)
     expect(win.open.mock.calls[0][0]).toBe(
-      `http://localhost:8080/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`
+      `http://localhost:8080/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}&lang=en`
     )
     // A message from the default origin is no longer trusted...
     fromWallet(readyMessage(), { origin: WALLET_ORIGIN })
@@ -475,14 +478,77 @@ describe('Direct transport - popup size and position', () => {
   })
 })
 
+describe('Direct transport — popup language', () => {
+  const popupUrl = () => new URL(win.open.mock.calls[win.open.mock.calls.length - 1][0])
+
+  const openPopup = (adapter: ReturnType<typeof createAdapter>['adapter']) => {
+    const connecting = adapter.connect({ method: 'direct' })
+    connecting.catch(() => undefined)
+    return connecting
+  }
+
+  it.each([
+    ['sk', 'sk'],
+    ['en', 'en'],
+    ['hu', 'hu'],
+    ['sk-SK', 'sk'],
+    ['de', 'en'],
+    ['', 'en']
+  ])('opens the wallet in the dApp language %j as lang=%s', (locale, lang) => {
+    const { adapter } = createAdapter({ locale })
+    openPopup(adapter)
+    expect(popupUrl().searchParams.get('lang')).toBe(lang)
+    expect(popupUrl().searchParams.get('origin')).toBe(DAPP_ORIGIN)
+    expect(popupUrl().pathname).toBe('/direct')
+  })
+
+  it('follows a language change made after the adapter was created', () => {
+    const { adapter } = createAdapter({ locale: 'en' })
+    openPopup(adapter)
+    expect(popupUrl().searchParams.get('lang')).toBe('en')
+    adapter.disconnect().catch(() => undefined)
+
+    // The DEX re-localizes the live adapter with a plain field write (BiatecDEX walletLocale.ts).
+    ;(adapter as unknown as { locale: string }).locale = 'sk'
+    openPopup(adapter)
+    expect(popupUrl().searchParams.get('lang')).toBe('sk')
+  })
+
+  it('prefers the language the user picked inside the open connect dialog', () => {
+    const { adapter } = createAdapter({ locale: 'en' })
+    // What the dialog's flag buttons report through onLocaleChange.
+    ;(adapter as unknown as { dialogLocale: string }).dialogLocale = 'it'
+    openPopup(adapter)
+    expect(popupUrl().searchParams.get('lang')).toBe('it')
+  })
+
+  it('sends no lang when the transport has no locale source', () => {
+    const transport = new DirectTransport(
+      {
+        logger: {
+          debug: () => undefined,
+          info: () => undefined,
+          warn: () => undefined,
+          error: () => undefined
+        },
+        getActiveNetworkConfig: () => ({ genesisHash: GENESIS_HASH })
+      } as never,
+      {}
+    )
+    transport.connect().catch(() => undefined)
+    expect(popupUrl().search).toBe(`?origin=${encodeURIComponent(DAPP_ORIGIN)}`)
+    transport.cancelPending()
+  })
+})
+
 describe('Direct transport — connect', () => {
   it('opens the popup synchronously with the origin hint and stores the approved accounts', async () => {
-    const { adapter } = createAdapter()
+    const { adapter } = createAdapter({ locale: 'en' })
     const connecting = adapter.connect({ method: 'direct' })
     // Same tick, no await yet: window.open must already have been called (user-gesture rule).
     expect(win.open).toHaveBeenCalledTimes(1)
     const [url, name, features] = win.open.mock.calls[0]
-    expect(url).toBe(`${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}`)
+    expect(url).toBe(`${WALLET_ORIGIN}/direct?origin=${encodeURIComponent(DAPP_ORIGIN)}&lang=en`)
     expect(name).toMatch(/^biatec-wallet-direct-[0-9a-f-]{36}$/)
     expect(features).toMatch(/^popup,width=1100,height=860,left=\d+,top=\d+$/)
 

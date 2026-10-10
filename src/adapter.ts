@@ -28,6 +28,7 @@ import {
 import { DirectNetworkMismatchError, PopupBlockedError, SessionError } from './errors'
 import { LiquidErrorCode, LiquidProviderError } from './liquid/protocol'
 import { ICON } from './icon'
+import { resolveLocale, type BiatecLocale } from './i18n'
 import type { HelloResult } from './liquid/protocol'
 import { DirectTransport, type DirectTransportOptions } from './transports/direct-transport'
 import { LiquidTransport, type LiquidTransportOptions } from './transports/liquid-transport'
@@ -156,6 +157,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
   private readonly direct: DirectTransport | null
   private readonly userOnDisplayUri: BiatecWalletOptions['onDisplayUri']
   private readonly locale: string | undefined
+  /** Language the user picked inside the open connect dialog; popups follow it until it closes. */
+  private dialogLocale: BiatecLocale | null = null
   private readonly enabledMethods: BiatecMethod[]
   private readonly defaultMethod: BiatecMethod
   /** False when `direct` is the default only implicitly: its popup must not open on connect(). */
@@ -274,6 +277,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       getAddresses: () => this.addresses,
       getActiveNetworkConfig: () => this.activeNetworkConfig,
       getActiveNetwork: () => this.activeNetwork,
+      getLocale: () => this.dialogLocale ?? resolveLocale(this.locale),
       createStdSignData: this.createStdSignData,
       onDisconnect: this.onDisconnect,
       getAuthAddr: async (address) => {
@@ -420,7 +424,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       )
     }
 
-    return new Promise((resolve, reject) => {
+    let pickedLocale: BiatecLocale | null = null
+    return new Promise<WalletAccount[]>((resolve, reject) => {
       let settled = false
       const started = new Set<BiatecMethod>()
       const failed = new Set<BiatecMethod>()
@@ -435,6 +440,10 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
         defaultMethod,
         showContent,
         ...(this.locale ? { locale: this.locale } : {}),
+        onLocaleChange: (next) => {
+          pickedLocale = next
+          this.dialogLocale = next
+        },
         // For `direct` with dialog content this is the "Open Biatec Wallet" button's click
         // handler, so `attempt` -> `window.open` runs synchronously inside that click.
         onSelectMethod: (method) => {
@@ -523,6 +532,9 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
 
       // An implicit Direct default only shows its idle state; the button click starts it.
       if (autoStart || !showContent) attempt(defaultMethod)
+    }).finally(() => {
+      // Only drop our own pick: an overlapping connect() may have set a newer one.
+      if (this.dialogLocale === pickedLocale) this.dialogLocale = null
     })
   }
 

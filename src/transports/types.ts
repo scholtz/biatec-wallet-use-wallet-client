@@ -20,6 +20,11 @@ export interface TransportContext {
   getAddresses: () => string[]
   getActiveNetworkConfig: () => NetworkConfig
   getActiveNetwork: () => string
+  /**
+   * Language to open the wallet popup in (a supported locale), read each time a popup is
+   * opened. Optional: without it the popup picks its own language. Used by Direct.
+   */
+  getLocale?: () => string | undefined
   createStdSignData: (data: string) => Promise<StdSignData>
   onDisconnect: () => void
   /** Auth (rekey) address of `address` according to the chain, if any. Used by Direct. */

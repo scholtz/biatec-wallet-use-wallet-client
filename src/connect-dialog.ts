@@ -88,6 +88,8 @@ export interface ConnectDialogOptions {
    */
   onSelectMethod: (method: BiatecMethod) => void
   onCancel: () => void
+  /** Fired when the user picks another language in the dialog, so popups can follow it. */
+  onLocaleChange?: (locale: BiatecLocale) => void
 }
 
 function noopHandle(): ConnectDialogController {
@@ -253,6 +255,7 @@ export function openConnectDialog(options: ConnectDialogOptions): ConnectDialogC
   function setLocale(next: BiatecLocale): void {
     if (next === locale) return
     locale = next
+    options.onLocaleChange?.(next)
     i18n = TRANSLATIONS[locale]
     titleEl.textContent = i18n.title
     if (subtitleEl) subtitleEl.textContent = i18n.subtitle

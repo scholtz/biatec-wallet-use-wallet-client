@@ -632,7 +632,11 @@ export class DirectTransport {
       )
     }
     const dappOrigin = checkDappOrigin(host.location.origin)
-    const url = `${this.walletBase}${DIRECT_ROUTE}?origin=${encodeURIComponent(dappOrigin)}`
+    const lang = this.ctx.getLocale?.()
+    // `lang` tells the wallet which language to open in, so the popup matches the dApp / dialog.
+    const url =
+      `${this.walletBase}${DIRECT_ROUTE}?origin=${encodeURIComponent(dappOrigin)}` +
+      (lang ? `&lang=${encodeURIComponent(lang)}` : '')
     // A UNIQUE window name per session: a fixed name would let this load navigate a popup left
     // open by an earlier page load, which the wallet already treats as consumed (single-use).
     const windowName = `${DIRECT_WINDOW_NAME}-${crypto.randomUUID()}`
