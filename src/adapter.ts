@@ -424,7 +424,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       )
     }
 
-    this.dialogLocale = null
+    let pickedLocale: BiatecLocale | null = null
     return new Promise<WalletAccount[]>((resolve, reject) => {
       let settled = false
       const started = new Set<BiatecMethod>()
@@ -441,6 +441,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
         showContent,
         ...(this.locale ? { locale: this.locale } : {}),
         onLocaleChange: (next) => {
+          pickedLocale = next
           this.dialogLocale = next
         },
         // For `direct` with dialog content this is the "Open Biatec Wallet" button's click
@@ -532,7 +533,8 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
       // An implicit Direct default only shows its idle state; the button click starts it.
       if (autoStart || !showContent) attempt(defaultMethod)
     }).finally(() => {
-      this.dialogLocale = null
+      // Only drop our own pick: an overlapping connect() may have set a newer one.
+      if (this.dialogLocale === pickedLocale) this.dialogLocale = null
     })
   }
 
