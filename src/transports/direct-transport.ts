@@ -290,8 +290,8 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
     )
   const { CloseOutOC, ClearStateOC, UpdateApplicationOC, DeleteApplicationOC } =
     algosdk.OnApplicationComplete
-  // The decoder yields an unsigned integer, so only the upper bound can be exceeded.
-  if (call.onComplete > DeleteApplicationOC) {
+  // Two-sided and NaN-safe: a hand-built Transaction object can carry any number.
+  if (!(call.onComplete >= 0 && call.onComplete <= DeleteApplicationOC)) {
     return refuse(
       'An application call with an unknown OnComplete is not supported by Biatec Direct.'
     )
