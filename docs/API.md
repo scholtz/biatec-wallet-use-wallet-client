@@ -232,9 +232,9 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
   a creation closing out) the call rejects with a `LiquidProviderError` `4200`
   (`Transaction type "<t>" is not supported by Biatec Direct.`, or the specific reason, such as
   `Program bytes on this application call are not supported by Biatec Direct.`, which is the wallet's
-  own wording) **before any popup opens**. The check covers every
-  transaction of the group (also pre-signed and counterparty ones), not only the positions to be
-  signed. Use the WalletConnect method for those transactions.
+  own wording) **before any popup opens**. When at least one position is to
+  be signed, the check covers every transaction of the group (also pre-signed and counterparty
+  ones), not only the positions to be signed. Use the WalletConnect method for those transactions.
   The one exception: an application call on a network the wallet does not recognise is refused by
   the wallet itself (the SDK has no copy of its network table), so there the popup opens and closes with `4200`.
 

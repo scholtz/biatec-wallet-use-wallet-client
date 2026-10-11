@@ -1746,6 +1746,22 @@ describe('Direct transport — unsupported transaction kinds', () => {
     })
   }
 
+  it('refuses extra pages on an application update', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const update = algosdk.makeApplicationUpdateTxnFromObject({
+      sender: ADDR1,
+      appIndex: 5,
+      approvalProgram: program,
+      clearProgram: program,
+      suggestedParams: params
+    })
+    Object.assign(update.applicationCall!, { extraPages: 1 })
+    const error = await adapter.signTransactions([update]).catch((e) => e)
+    expect(error.message).toMatch(/Extra pages on this application call are not supported/)
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
   const boundary: [string, () => algosdk.Transaction][] = [
     [
       'a creation using exactly the declared pages',
