@@ -1648,9 +1648,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
           appIndex: 5,
           suggestedParams: params
         })
-    ]
-  ]
-  lifecycle.push(
+    ],
     [
       'application opt-in',
       () =>
@@ -1678,7 +1676,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
           suggestedParams: params
         })
     ]
-  )
+  ]
   for (const [name, make] of lifecycle) {
     it(`sends an ${name} to the wallet for review`, async () => {
       const { adapter } = await connectAdapter()
@@ -1700,6 +1698,47 @@ describe('Direct transport — unsupported transaction kinds', () => {
         })
       )
       expect(await signing).toEqual([signed])
+    })
+  }
+
+  const boundary: [string, () => algosdk.Transaction][] = [
+    [
+      'a creation using exactly the declared pages',
+      () => {
+        const txn = algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(4 * 2048 - 1),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 3,
+          suggestedParams: params
+        })
+        return txn
+      }
+    ],
+    [
+      'an update using exactly the maximum program size',
+      () =>
+        algosdk.makeApplicationUpdateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          approvalProgram: new Uint8Array(4 * 2048 - 1),
+          clearProgram: new Uint8Array(1),
+          suggestedParams: params
+        })
+    ]
+  ]
+  for (const [name, make] of boundary) {
+    it(`accepts ${name}`, async () => {
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const signing = adapter.signTransactions([make()])
+      signing.catch(() => undefined)
+      expect(win.open).toHaveBeenCalledTimes(1)
     })
   }
 

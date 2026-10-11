@@ -132,7 +132,10 @@ wallet answers asset config (`acfg`), asset freeze (`afrz`), `keyreg`, state pro
 heartbeats (`hb`) and application calls breaking those rules with error `4200`
 (`Transaction type "<t>" is not supported by Biatec Direct.`, or a reason such as `Program bytes on
 this application call are not supported by Biatec Direct.`) and closes the popup. The SDK applies the same rule client-side, synchronously and
-before `window.open`, once at least one position is to be signed. Because the wallet checks every
+before `window.open`, once at least one position is to be signed. One rule is wallet-only: an
+application call on a network the wallet does not recognise (a private chain, say) is refused by
+the wallet, because it cannot explain such a call; the SDK has no copy of the wallet's network
+table, so there the popup opens and closes with `4200`. Because the wallet checks every
 transaction of the request, the **whole group** must consist of supported kinds, including
 pre-signed and counterparty (`signers: []`) positions; a group in which nothing is to be signed
 returns `null`s without a popup. This way the user never sees a pointless popup. dApps that need those

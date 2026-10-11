@@ -233,6 +233,8 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
   (`<what> is not supported by Biatec Direct.`) **before any popup opens**. The check covers every
   transaction of the group (also pre-signed and counterparty ones), not only the positions to be
   signed. Use the WalletConnect method for those transactions.
+  The one exception: an application call on a network the wallet does not recognise is refused by
+  the wallet itself (the SDK has no copy of its network table), so there the popup opens and closes with `4200`.
 
 ### `signData`
 
