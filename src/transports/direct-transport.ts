@@ -261,29 +261,66 @@ interface Exchange {
   validate: (result: unknown) => unknown
 }
 
+// AVM application limits, as enforced by the wallet's Direct popup.
+const APP_PAGE_BYTES = 2048
+const APP_MAX_EXTRA_PAGES = 3
+const APP_MAX_PROGRAM_BYTES = (1 + APP_MAX_EXTRA_PAGES) * APP_PAGE_BYTES
+
 /**
- * Biatec Wallet's compact Direct popup signs only payments, asset transfers and calls to EXISTING
- * applications, and refuses everything else with 4200. Checking here (synchronously, before the
- * popup opens) saves the user a pointless popup; such dApps must use WalletConnect.
+ * Biatec Wallet's compact Direct popup signs payments, asset transfers and application calls over
+ * the whole lifecycle (create, update, delete, NoOp, opt-in, close-out, clear-state) and refuses
+ * everything else with 4200. Checking here (synchronously, before the popup opens) saves the user
+ * a pointless popup. This mirrors the wallet's `directUnsupportedReason`
+ * (scholtz/wallet src/scripts/direct/protocol.ts); keep them in sync.
  */
 function assertSupportedByDirect(txn: algosdk.Transaction): void {
-  const refuse = (what: string): never => {
-    throw new LiquidProviderError(
-      `${what} is not supported by Biatec Direct.`,
-      LiquidErrorCode.invalidInput
-    )
+  // `reason` is the wallet's exact message (scholtz/wallet `directUnsupportedReason`).
+  const refuse = (reason: string): never => {
+    throw new LiquidProviderError(reason, LiquidErrorCode.invalidInput)
   }
   const type: string = txn.type
   if (type === 'pay' || type === 'axfer') return
-  if (type === 'appl') {
-    const call = txn.applicationCall
-    if (!call || call.appIndex === 0n) refuse('Creating an application')
-    else if (call.approvalProgram.length > 0 || call.clearProgram.length > 0) {
-      refuse('Updating application programs')
-    }
-    return
+  if (type !== 'appl')
+    return refuse(`Transaction type "${type.slice(0, 16)}" is not supported by Biatec Direct.`)
+
+  const call = txn.applicationCall
+  if (!call)
+    return refuse(
+      'An application transaction without a call body is not supported by Biatec Direct.'
+    )
+  const { CloseOutOC, ClearStateOC, UpdateApplicationOC, DeleteApplicationOC } =
+    algosdk.OnApplicationComplete
+  // Two-sided and NaN-safe: a hand-built Transaction object can carry any number.
+  if (!(call.onComplete >= 0 && call.onComplete <= DeleteApplicationOC)) {
+    return refuse(
+      'An application call with an unknown OnComplete is not supported by Biatec Direct.'
+    )
   }
-  refuse(`Transaction type "${type}"`)
+  const pages = call.extraPages
+  const programBytes = call.approvalProgram.length + call.clearProgram.length
+  if (call.appIndex === 0n) {
+    // AVM limits: both programs fit (1 + extraPages) x 2048 bytes, at most 3 extra pages.
+    if (pages > APP_MAX_EXTRA_PAGES || programBytes > (1 + pages) * APP_PAGE_BYTES) {
+      return refuse(
+        'Programs that do not fit the declared pages are not supported by Biatec Direct.'
+      )
+    }
+    if (call.onComplete === CloseOutOC || call.onComplete === ClearStateOC) {
+      return refuse(
+        'An application creation with this OnComplete is not supported by Biatec Direct.'
+      )
+    }
+  } else {
+    // extraPages only means something on a creation; elsewhere it is unshown signed data.
+    if (pages !== 0)
+      return refuse('Extra pages on this application call are not supported by Biatec Direct.')
+    if (programBytes > APP_MAX_PROGRAM_BYTES)
+      return refuse('Programs above the maximum size are not supported by Biatec Direct.')
+    // Programs belong to a create or an update only; elsewhere they would be unshown code.
+    if (programBytes > 0 && call.onComplete !== UpdateApplicationOC) {
+      return refuse('Program bytes on this application call are not supported by Biatec Direct.')
+    }
+  }
 }
 
 /**

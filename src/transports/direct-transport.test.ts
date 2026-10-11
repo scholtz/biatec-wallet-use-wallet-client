@@ -1423,7 +1423,12 @@ describe('Direct transport — unsupported transaction kinds', () => {
     genesisHash: algosdk.base64ToBytes(GENESIS_HASH)
   }
   const program = new Uint8Array([6, 129, 1])
-  const cases: [string, () => algosdk.Transaction, RegExp][] = [
+  const cases: [
+    string,
+    () => algosdk.Transaction,
+    RegExp,
+    Partial<NonNullable<algosdk.Transaction['applicationCall']>>?
+  ][] = [
     [
       'asset config',
       () =>
@@ -1449,7 +1454,72 @@ describe('Direct transport — unsupported transaction kinds', () => {
       /Transaction type "afrz" is not supported/
     ],
     [
-      'application creation',
+      'application creation closing out',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.CloseOutOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          suggestedParams: params
+        }),
+      /An application creation with this OnComplete is not supported by Biatec Direct/
+    ],
+    [
+      'application creation with programs above the declared pages',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(2049),
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
+    ],
+    [
+      'program bytes on a plain call',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Program bytes on this application call are not supported by Biatec Direct/,
+      { approvalProgram: program }
+    ],
+    [
+      'extra pages on an existing application',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Extra pages on this application call are not supported by Biatec Direct/,
+      { extraPages: 1 }
+    ],
+    [
+      'unknown OnComplete',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /An application call with an unknown OnComplete is not supported by Biatec Direct/,
+      { onComplete: 6 as algosdk.OnApplicationComplete }
+    ],
+    [
+      'application creation clearing state',
       () =>
         algosdk.makeApplicationCreateTxnFromObject({
           sender: ADDR1,
@@ -1462,27 +1532,92 @@ describe('Direct transport — unsupported transaction kinds', () => {
           numGlobalByteSlices: 0,
           suggestedParams: params
         }),
-      /Creating an application is not supported by Biatec Direct/
+      /An application creation with this OnComplete is not supported by Biatec Direct/,
+      { onComplete: 3 }
     ],
     [
-      'application program update',
+      'application creation with more than 3 extra pages',
       () =>
-        algosdk.makeApplicationUpdateTxnFromObject({
+        algosdk.makeApplicationCreateTxnFromObject({
           sender: ADDR1,
-          appIndex: 5,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
           approvalProgram: program,
           clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
           suggestedParams: params
         }),
-      /Updating application programs is not supported by Biatec Direct/
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/,
+      { extraPages: 4 }
+    ],
+    [
+      'application creation one byte over three extra pages',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(4 * 2048),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 3,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
+    ],
+    [
+      'application creation one byte over one extra page',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(2 * 2048),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 1,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
+    ],
+    [
+      'application delete carrying programs',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Program bytes on this application call are not supported by Biatec Direct/,
+      { approvalProgram: program }
+    ],
+    [
+      'application delete carrying more than the maximum program size',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Programs above the maximum size are not supported by Biatec Direct/,
+      { approvalProgram: new Uint8Array(4 * 2048 + 1) }
     ]
   ]
 
-  for (const [name, make, message] of cases) {
+  for (const [name, make, message, patch] of cases) {
     it(`rejects ${name} with 4200 before any popup opens`, async () => {
       const { adapter } = await connectAdapter()
       win.open.mockClear()
-      const error = await adapter.signTransactions([make()]).catch((e) => e)
+      const txn = make()
+      // The sdk builders refuse these shapes, so the hostile body is patched in afterwards.
+      if (patch) Object.assign(txn.applicationCall!, patch)
+      const error = await adapter.signTransactions([txn]).catch((e) => e)
       expect(error).toBeInstanceOf(LiquidProviderError)
       expect(error.code).toBe(4200)
       expect(error.message).toMatch(message)
@@ -1519,6 +1654,168 @@ describe('Direct transport — unsupported transaction kinds', () => {
     expect(error).toBeInstanceOf(LiquidProviderError)
     expect(error.code).toBe(4200)
     expect(error.message).toMatch(/Transaction type "afrz" is not supported/)
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
+  const lifecycle: [string, () => algosdk.Transaction][] = [
+    [
+      'application creation',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 1,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application update',
+      () =>
+        algosdk.makeApplicationUpdateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          approvalProgram: program,
+          clearProgram: program,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application delete',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application opt-in',
+      () =>
+        algosdk.makeApplicationOptInTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application close-out',
+      () =>
+        algosdk.makeApplicationCloseOutTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application clear-state',
+      () =>
+        algosdk.makeApplicationClearStateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ]
+  ]
+  for (const [name, make] of lifecycle) {
+    it(`sends an ${name} to the wallet for review`, async () => {
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const txn = make()
+      const signing = adapter.signTransactions([txn])
+      signing.catch(() => undefined)
+      expect(win.open).toHaveBeenCalledTimes(1)
+      fromWallet(readyMessage())
+      await flush()
+      const request = sentRequest()
+      expect(request.reference).toBe('arc0027:sign_transactions:request')
+      expect(request.params.txns).toEqual([{ txn: toBase64Url(txn.toByte()) }])
+      const signed = txn.signTxn(account1.sk)
+      fromWallet(
+        response(request, LiquidReference.signTransactionsResponse, {
+          providerId: 'dapp-provider',
+          stxns: [toBase64Url(signed)]
+        })
+      )
+      expect(await signing).toEqual([signed])
+    })
+  }
+
+  it('refuses extra pages on an application update', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const update = algosdk.makeApplicationUpdateTxnFromObject({
+      sender: ADDR1,
+      appIndex: 5,
+      approvalProgram: program,
+      clearProgram: program,
+      suggestedParams: params
+    })
+    Object.assign(update.applicationCall!, { extraPages: 1 })
+    const error = await adapter.signTransactions([update]).catch((e) => e)
+    expect(error.message).toMatch(/Extra pages on this application call are not supported/)
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
+  const boundary: [string, () => algosdk.Transaction][] = [
+    [
+      'a creation using exactly the declared pages',
+      () => {
+        return algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(4 * 2048 - 1),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 3,
+          suggestedParams: params
+        })
+      }
+    ],
+    [
+      'an update using exactly the maximum program size',
+      () =>
+        algosdk.makeApplicationUpdateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          approvalProgram: new Uint8Array(4 * 2048 - 1),
+          clearProgram: new Uint8Array(1),
+          suggestedParams: params
+        })
+    ]
+  ]
+  for (const [name, make] of boundary) {
+    it(`accepts ${name}`, async () => {
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const signing = adapter.signTransactions([make()])
+      signing.catch(() => undefined)
+      expect(win.open).toHaveBeenCalledTimes(1)
+    })
+  }
+
+  it('refuses hostile application shapes sent as encoded bytes, before any popup', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const txn = algosdk.makeApplicationNoOpTxnFromObject({
+      sender: ADDR1,
+      appIndex: 5,
+      suggestedParams: params
+    })
+    // Program bytes on a plain NoOp call, sent as encoded bytes (the dApp-supplied wire path).
+    const hostile = algosdk.decodeUnsignedTransaction(txn.toByte())
+    Object.assign(hostile.applicationCall!, { approvalProgram: program })
+    const error = await adapter.signTransactions([hostile.toByte()]).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.message).toMatch(/Program bytes on this application call are not supported/)
     expect(win.open).not.toHaveBeenCalled()
   })
 
