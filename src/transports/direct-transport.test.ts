@@ -1553,6 +1553,51 @@ describe('Direct transport — unsupported transaction kinds', () => {
       { extraPages: 4 }
     ],
     [
+      'application creation one byte over three extra pages',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(4 * 2048),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 3,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
+    ],
+    [
+      'application creation one byte over one extra page',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(2 * 2048),
+          clearProgram: new Uint8Array(1),
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 1,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
+    ],
+    [
+      'application delete carrying programs',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Program bytes on this application call are not supported by Biatec Direct/,
+      { approvalProgram: program }
+    ],
+    [
       'application delete carrying more than the maximum program size',
       () =>
         algosdk.makeApplicationDeleteTxnFromObject({
@@ -1705,7 +1750,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
     [
       'a creation using exactly the declared pages',
       () => {
-        const txn = algosdk.makeApplicationCreateTxnFromObject({
+        return algosdk.makeApplicationCreateTxnFromObject({
           sender: ADDR1,
           onComplete: algosdk.OnApplicationComplete.NoOpOC,
           approvalProgram: new Uint8Array(4 * 2048 - 1),
@@ -1717,7 +1762,6 @@ describe('Direct transport — unsupported transaction kinds', () => {
           extraPages: 3,
           suggestedParams: params
         })
-        return txn
       }
     ],
     [

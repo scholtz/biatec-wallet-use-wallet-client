@@ -230,7 +230,9 @@ signTransactions<T extends algosdk.Transaction[] | Uint8Array[]>(
   `afrz`, `keyreg`, `stpf`, `hb`) or an application call the popup cannot show completely (program
   bytes on a plain call, extra pages on an existing app, programs larger than the declared pages,
   a creation closing out) the call rejects with a `LiquidProviderError` `4200`
-  (`<what> is not supported by Biatec Direct.`) **before any popup opens**. The check covers every
+  (`Transaction type "<t>" is not supported by Biatec Direct.`, or the specific reason, such as
+  `Program bytes on this application call are not supported by Biatec Direct.`, which is the wallet's
+  own wording) **before any popup opens**. The check covers every
   transaction of the group (also pre-signed and counterparty ones), not only the positions to be
   signed. Use the WalletConnect method for those transactions.
   The one exception: an application call on a network the wallet does not recognise is refused by
