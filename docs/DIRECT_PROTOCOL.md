@@ -130,7 +130,8 @@ risk). Programs are only valid on a creation (within the declared `extraPages`, 
 update; `extraPages` is only valid on a creation; a creation cannot close out or clear state. The
 wallet answers asset config (`acfg`), asset freeze (`afrz`), `keyreg`, state proofs (`stpf`),
 heartbeats (`hb`) and application calls breaking those rules with error `4200`
-(`Transaction type "<t>" is not supported by Biatec Direct.`) and closes the popup. The SDK applies the same rule client-side, synchronously and
+(`Transaction type "<t>" is not supported by Biatec Direct.`, or a reason such as `Program bytes on
+this application call are not supported by Biatec Direct.`) and closes the popup. The SDK applies the same rule client-side, synchronously and
 before `window.open`, once at least one position is to be signed. Because the wallet checks every
 transaction of the request, the **whole group** must consist of supported kinds, including
 pre-signed and counterparty (`signers: []`) positions; a group in which nothing is to be signed

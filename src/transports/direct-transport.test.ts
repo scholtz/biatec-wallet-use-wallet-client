@@ -1483,7 +1483,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
           numGlobalByteSlices: 0,
           suggestedParams: params
         }),
-      /Programs that do not fit the declared pages is not supported by Biatec Direct/
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/
     ],
     [
       'program bytes on a plain call',
@@ -1493,7 +1493,7 @@ describe('Direct transport — unsupported transaction kinds', () => {
           appIndex: 5,
           suggestedParams: params
         }),
-      /Program bytes on this application call is not supported by Biatec Direct/,
+      /Program bytes on this application call are not supported by Biatec Direct/,
       { approvalProgram: program }
     ],
     [
@@ -1504,8 +1504,64 @@ describe('Direct transport — unsupported transaction kinds', () => {
           appIndex: 5,
           suggestedParams: params
         }),
-      /Extra pages on this application call is not supported by Biatec Direct/,
+      /Extra pages on this application call are not supported by Biatec Direct/,
       { extraPages: 1 }
+    ],
+    [
+      'unknown OnComplete',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /An application call with an unknown OnComplete is not supported by Biatec Direct/,
+      { onComplete: 6 as algosdk.OnApplicationComplete }
+    ],
+    [
+      'application creation clearing state',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          suggestedParams: params
+        }),
+      /An application creation with this OnComplete is not supported by Biatec Direct/,
+      { onComplete: 3 }
+    ],
+    [
+      'application creation with more than 3 extra pages',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          suggestedParams: params
+        }),
+      /Programs that do not fit the declared pages are not supported by Biatec Direct/,
+      { extraPages: 4 }
+    ],
+    [
+      'application delete carrying more than the maximum program size',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Programs above the maximum size are not supported by Biatec Direct/,
+      { approvalProgram: new Uint8Array(4 * 2048 + 1) }
     ]
   ]
 
@@ -1594,13 +1650,56 @@ describe('Direct transport — unsupported transaction kinds', () => {
         })
     ]
   ]
+  lifecycle.push(
+    [
+      'application opt-in',
+      () =>
+        algosdk.makeApplicationOptInTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application close-out',
+      () =>
+        algosdk.makeApplicationCloseOutTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application clear-state',
+      () =>
+        algosdk.makeApplicationClearStateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ]
+  )
   for (const [name, make] of lifecycle) {
-    it(`opens the popup for an ${name}`, async () => {
+    it(`sends an ${name} to the wallet for review`, async () => {
       const { adapter } = await connectAdapter()
       win.open.mockClear()
-      const signing = adapter.signTransactions([make()])
+      const txn = make()
+      const signing = adapter.signTransactions([txn])
       signing.catch(() => undefined)
       expect(win.open).toHaveBeenCalledTimes(1)
+      fromWallet(readyMessage())
+      await flush()
+      const request = sentRequest()
+      expect(request.reference).toBe('arc0027:sign_transactions:request')
+      expect(request.params.txns).toEqual([{ txn: toBase64Url(txn.toByte()) }])
+      const signed = txn.signTxn(account1.sk)
+      fromWallet(
+        response(request, LiquidReference.signTransactionsResponse, {
+          providerId: 'dapp-provider',
+          stxns: [toBase64Url(signed)]
+        })
+      )
+      expect(await signing).toEqual([signed])
     })
   }
 
