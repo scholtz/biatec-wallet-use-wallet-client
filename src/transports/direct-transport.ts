@@ -262,9 +262,11 @@ interface Exchange {
 }
 
 /**
- * Biatec Wallet's compact Direct popup signs only payments, asset transfers and calls to EXISTING
- * applications, and refuses everything else with 4200. Checking here (synchronously, before the
- * popup opens) saves the user a pointless popup; such dApps must use WalletConnect.
+ * Biatec Wallet's compact Direct popup signs payments, asset transfers and application calls over
+ * the whole lifecycle (create, update, delete, NoOp, opt-in, close-out, clear-state) and refuses
+ * everything else with 4200. Checking here (synchronously, before the popup opens) saves the user
+ * a pointless popup. This mirrors the wallet's `directUnsupportedReason`
+ * (scholtz/wallet src/scripts/direct/protocol.ts); keep them in sync.
  */
 function assertSupportedByDirect(txn: algosdk.Transaction): void {
   const refuse = (what: string): never => {
@@ -275,15 +277,34 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
   }
   const type: string = txn.type
   if (type === 'pay' || type === 'axfer') return
-  if (type === 'appl') {
-    const call = txn.applicationCall
-    if (!call || call.appIndex === 0n) refuse('Creating an application')
-    else if (call.approvalProgram.length > 0 || call.clearProgram.length > 0) {
-      refuse('Updating application programs')
-    }
-    return
+  if (type !== 'appl') return refuse(`Transaction type "${type}"`)
+
+  const call = txn.applicationCall
+  if (!call) return refuse('An application transaction without a call body')
+  // OnComplete: 0 NoOp, 1 OptIn, 2 CloseOut, 3 ClearState, 4 Update, 5 Delete.
+  if (call.onComplete < 0 || call.onComplete > 5) {
+    return refuse('An application call with an unknown OnComplete')
   }
-  refuse(`Transaction type "${type}"`)
+  const isCreate = call.appIndex === 0n
+  const pages = Number(call.extraPages ?? 0)
+  const programBytes = call.approvalProgram.length + call.clearProgram.length
+  if (isCreate) {
+    // AVM limits: both programs fit (1 + extraPages) x 2048 bytes, at most 3 extra pages.
+    if (pages > 3 || programBytes > (1 + pages) * 2048) {
+      return refuse('Programs that do not fit the declared pages')
+    }
+    if (call.onComplete === 2 || call.onComplete === 3) {
+      return refuse('An application creation with this OnComplete')
+    }
+  } else {
+    // extraPages only means something on a creation; elsewhere it is unshown signed data.
+    if (pages !== 0) return refuse('Extra pages on this application call')
+    if (programBytes > 4 * 2048) return refuse('Programs above the maximum size')
+    // Programs belong to a create or an update only; elsewhere they would be unshown code.
+    if (programBytes > 0 && call.onComplete !== 4) {
+      return refuse('Program bytes on this application call')
+    }
+  }
 }
 
 /**

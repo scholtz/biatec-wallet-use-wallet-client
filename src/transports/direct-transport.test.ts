@@ -1423,7 +1423,12 @@ describe('Direct transport — unsupported transaction kinds', () => {
     genesisHash: algosdk.base64ToBytes(GENESIS_HASH)
   }
   const program = new Uint8Array([6, 129, 1])
-  const cases: [string, () => algosdk.Transaction, RegExp][] = [
+  const cases: [
+    string,
+    () => algosdk.Transaction,
+    RegExp,
+    Partial<NonNullable<algosdk.Transaction['applicationCall']>>?
+  ][] = [
     [
       'asset config',
       () =>
@@ -1449,11 +1454,11 @@ describe('Direct transport — unsupported transaction kinds', () => {
       /Transaction type "afrz" is not supported/
     ],
     [
-      'application creation',
+      'application creation closing out',
       () =>
         algosdk.makeApplicationCreateTxnFromObject({
           sender: ADDR1,
-          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          onComplete: algosdk.OnApplicationComplete.CloseOutOC,
           approvalProgram: program,
           clearProgram: program,
           numLocalInts: 0,
@@ -1462,27 +1467,56 @@ describe('Direct transport — unsupported transaction kinds', () => {
           numGlobalByteSlices: 0,
           suggestedParams: params
         }),
-      /Creating an application is not supported by Biatec Direct/
+      /An application creation with this OnComplete is not supported by Biatec Direct/
     ],
     [
-      'application program update',
+      'application creation with programs above the declared pages',
       () =>
-        algosdk.makeApplicationUpdateTxnFromObject({
+        algosdk.makeApplicationCreateTxnFromObject({
           sender: ADDR1,
-          appIndex: 5,
-          approvalProgram: program,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: new Uint8Array(2049),
           clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
           suggestedParams: params
         }),
-      /Updating application programs is not supported by Biatec Direct/
+      /Programs that do not fit the declared pages is not supported by Biatec Direct/
+    ],
+    [
+      'program bytes on a plain call',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Program bytes on this application call is not supported by Biatec Direct/,
+      { approvalProgram: program }
+    ],
+    [
+      'extra pages on an existing application',
+      () =>
+        algosdk.makeApplicationNoOpTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        }),
+      /Extra pages on this application call is not supported by Biatec Direct/,
+      { extraPages: 1 }
     ]
   ]
 
-  for (const [name, make, message] of cases) {
+  for (const [name, make, message, patch] of cases) {
     it(`rejects ${name} with 4200 before any popup opens`, async () => {
       const { adapter } = await connectAdapter()
       win.open.mockClear()
-      const error = await adapter.signTransactions([make()]).catch((e) => e)
+      const txn = make()
+      // The sdk builders refuse these shapes, so the hostile body is patched in afterwards.
+      if (patch) Object.assign(txn.applicationCall!, patch)
+      const error = await adapter.signTransactions([txn]).catch((e) => e)
       expect(error).toBeInstanceOf(LiquidProviderError)
       expect(error.code).toBe(4200)
       expect(error.message).toMatch(message)
@@ -1521,6 +1555,54 @@ describe('Direct transport — unsupported transaction kinds', () => {
     expect(error.message).toMatch(/Transaction type "afrz" is not supported/)
     expect(win.open).not.toHaveBeenCalled()
   })
+
+  const lifecycle: [string, () => algosdk.Transaction][] = [
+    [
+      'application creation',
+      () =>
+        algosdk.makeApplicationCreateTxnFromObject({
+          sender: ADDR1,
+          onComplete: algosdk.OnApplicationComplete.NoOpOC,
+          approvalProgram: program,
+          clearProgram: program,
+          numLocalInts: 0,
+          numLocalByteSlices: 0,
+          numGlobalInts: 0,
+          numGlobalByteSlices: 0,
+          extraPages: 1,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application update',
+      () =>
+        algosdk.makeApplicationUpdateTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          approvalProgram: program,
+          clearProgram: program,
+          suggestedParams: params
+        })
+    ],
+    [
+      'application delete',
+      () =>
+        algosdk.makeApplicationDeleteTxnFromObject({
+          sender: ADDR1,
+          appIndex: 5,
+          suggestedParams: params
+        })
+    ]
+  ]
+  for (const [name, make] of lifecycle) {
+    it(`opens the popup for an ${name}`, async () => {
+      const { adapter } = await connectAdapter()
+      win.open.mockClear()
+      const signing = adapter.signTransactions([make()])
+      signing.catch(() => undefined)
+      expect(win.open).toHaveBeenCalledTimes(1)
+    })
+  }
 
   it('still opens the popup for a call to an existing application', async () => {
     const { adapter } = await connectAdapter()
