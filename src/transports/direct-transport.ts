@@ -290,7 +290,7 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
     )
   const { CloseOutOC, ClearStateOC, UpdateApplicationOC, DeleteApplicationOC } =
     algosdk.OnApplicationComplete
-  if (call.onComplete < 0 || call.onComplete > DeleteApplicationOC) {
+  if (call.onComplete > DeleteApplicationOC) {
     return refuse(
       'An application call with an unknown OnComplete is not supported by Biatec Direct.'
     )

@@ -1786,6 +1786,23 @@ describe('Direct transport — unsupported transaction kinds', () => {
     })
   }
 
+  it('refuses hostile application shapes sent as encoded bytes, before any popup', async () => {
+    const { adapter } = await connectAdapter()
+    win.open.mockClear()
+    const txn = algosdk.makeApplicationNoOpTxnFromObject({
+      sender: ADDR1,
+      appIndex: 5,
+      suggestedParams: params
+    })
+    // Program bytes on a plain NoOp call, sent as encoded bytes (the dApp-supplied wire path).
+    const hostile = algosdk.decodeUnsignedTransaction(txn.toByte())
+    Object.assign(hostile.applicationCall!, { approvalProgram: program })
+    const error = await adapter.signTransactions([hostile.toByte()]).catch((e) => e)
+    expect(error).toBeInstanceOf(LiquidProviderError)
+    expect(error.message).toMatch(/Program bytes on this application call are not supported/)
+    expect(win.open).not.toHaveBeenCalled()
+  })
+
   it('still opens the popup for a call to an existing application', async () => {
     const { adapter } = await connectAdapter()
     win.open.mockClear()
