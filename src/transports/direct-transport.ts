@@ -261,6 +261,11 @@ interface Exchange {
   validate: (result: unknown) => unknown
 }
 
+// AVM application limits, as enforced by the wallet's Direct popup.
+const APP_PAGE_BYTES = 2048
+const APP_MAX_EXTRA_PAGES = 3
+const APP_MAX_PROGRAM_BYTES = (1 + APP_MAX_EXTRA_PAGES) * APP_PAGE_BYTES
+
 /**
  * Biatec Wallet's compact Direct popup signs payments, asset transfers and application calls over
  * the whole lifecycle (create, update, delete, NoOp, opt-in, close-out, clear-state) and refuses
@@ -283,8 +288,9 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
     return refuse(
       'An application transaction without a call body is not supported by Biatec Direct.'
     )
-  // OnComplete: 0 NoOp, 1 OptIn, 2 CloseOut, 3 ClearState, 4 Update, 5 Delete.
-  if (call.onComplete < 0 || call.onComplete > 5) {
+  const { CloseOutOC, ClearStateOC, UpdateApplicationOC, DeleteApplicationOC } =
+    algosdk.OnApplicationComplete
+  if (call.onComplete < 0 || call.onComplete > DeleteApplicationOC) {
     return refuse(
       'An application call with an unknown OnComplete is not supported by Biatec Direct.'
     )
@@ -293,12 +299,12 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
   const programBytes = call.approvalProgram.length + call.clearProgram.length
   if (call.appIndex === 0n) {
     // AVM limits: both programs fit (1 + extraPages) x 2048 bytes, at most 3 extra pages.
-    if (pages > 3 || programBytes > (1 + pages) * 2048) {
+    if (pages > APP_MAX_EXTRA_PAGES || programBytes > (1 + pages) * APP_PAGE_BYTES) {
       return refuse(
         'Programs that do not fit the declared pages are not supported by Biatec Direct.'
       )
     }
-    if (call.onComplete === 2 || call.onComplete === 3) {
+    if (call.onComplete === CloseOutOC || call.onComplete === ClearStateOC) {
       return refuse(
         'An application creation with this OnComplete is not supported by Biatec Direct.'
       )
@@ -307,10 +313,10 @@ function assertSupportedByDirect(txn: algosdk.Transaction): void {
     // extraPages only means something on a creation; elsewhere it is unshown signed data.
     if (pages !== 0)
       return refuse('Extra pages on this application call are not supported by Biatec Direct.')
-    if (programBytes > 4 * 2048)
+    if (programBytes > APP_MAX_PROGRAM_BYTES)
       return refuse('Programs above the maximum size are not supported by Biatec Direct.')
     // Programs belong to a create or an update only; elsewhere they would be unshown code.
-    if (programBytes > 0 && call.onComplete !== 4) {
+    if (programBytes > 0 && call.onComplete !== UpdateApplicationOC) {
       return refuse('Program bytes on this application call are not supported by Biatec Direct.')
     }
   }
