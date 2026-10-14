@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.0
+
+### Major Changes
+
+- First stable release (1.0.0). The adapter's API is now considered stable and follows semantic versioning from here on.
+
 ## 0.6.0
 
 ### Minor Changes
