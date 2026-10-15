@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.1
+
+### Patch Changes
+
+- [#17](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/17) [`af1ef63`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/af1ef63578c666ccfa24cc3e68a3879a3f22dad9) Thanks [@scholtz](https://github.com/scholtz)! - Fix the built-in connect dialog on phones: the method picker (Direct / WalletConnect / Liquid Auth) no longer runs off the screen; below 640px it becomes a row of compact tiles above the content, and the dialog scrolls if the viewport is short.
+
 ## 1.0.0
 
 ### Major Changes
