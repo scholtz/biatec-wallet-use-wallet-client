@@ -681,10 +681,29 @@ html[data-theme='light'] .bcd-overlay {
   transition: filter 120ms ease;
 }
 .bcd-copy:hover { filter: brightness(1.08); }
-@media (max-width: 420px) {
-  .bcd-body { flex-direction: column; }
-  .bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar { width: 100%; margin-top: 0; }
-  .bcd-methods { flex-direction: row; }
+/* Phones and narrow windows: the side-by-side layout (168px picker + 220px QR) does not fit, so
+   stack it — method picker as a row of equal-width tiles on top, content below. Tiles shrink
+   (min-width: 0) and ellipsize instead of pushing the row past the panel edge. */
+@media (max-width: 640px) {
+  .bcd-panel { padding: 1.25rem 1rem; max-height: calc(100dvh - 2rem); overflow-y: auto; }
+  .bcd-body { flex-direction: column; gap: 1rem; }
+  .bcd-sidebar, .bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar { width: 100%; margin-top: 0; }
+  .bcd-methods { flex-direction: row; gap: 0.4rem; }
+  .bcd-method {
+    flex: 1 1 0;
+    min-width: 0;
+    flex-direction: column;
+    justify-content: center;
+    gap: 0.3rem;
+    padding: 0.6rem 0.25rem;
+    position: relative;
+    text-align: center;
+  }
+  .bcd-method-text { flex: 0 1 auto; align-items: center; width: 100%; }
+  .bcd-method-label { max-width: 100%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.78rem; }
   .bcd-method-hint { display: none; }
+  .bcd-dot { position: absolute; top: 0.4rem; right: 0.4rem; }
+  .bcd-qr-tile { width: min(220px, 100%); height: auto; aspect-ratio: 1; }
+  .bcd-uri { min-width: 0; }
 }
 `
