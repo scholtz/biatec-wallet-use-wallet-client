@@ -518,7 +518,7 @@ html[data-theme='light'] .bcd-overlay {
 .bcd-panel--single { max-width: 380px; }
 /* More breathing room once there's room to give it — the picker+content layout otherwise looks
    cramped on a typical desktop viewport. */
-@media (min-width: 640px) {
+@media (min-width: 641px) {
   .bcd-panel:not(.bcd-panel--single) {
     max-width: 560px;
     padding: 2rem;
@@ -685,9 +685,10 @@ html[data-theme='light'] .bcd-overlay {
    stack it — method picker as a row of equal-width tiles on top, content below. Tiles shrink
    (min-width: 0) and ellipsize instead of pushing the row past the panel edge. */
 @media (max-width: 640px) {
-  .bcd-panel { padding: 1.25rem 1rem; max-height: calc(100dvh - 2rem); overflow-y: auto; }
+  .bcd-panel { padding: 1.25rem 1rem; max-height: calc(100vh - 2rem); max-height: calc(100dvh - 2rem); overflow-y: auto; }
   .bcd-body { flex-direction: column; gap: 1rem; }
-  .bcd-sidebar, .bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar { width: 100%; margin-top: 0; }
+  .bcd-sidebar, .bcd-panel:not(.bcd-panel--picker-only) .bcd-sidebar,
+  .bcd-panel:not(.bcd-panel--picker-only):not(.bcd-panel--single) .bcd-sidebar { width: 100%; margin-top: 0; }
   .bcd-methods { flex-direction: row; gap: 0.4rem; }
   .bcd-method {
     flex: 1 1 0;
