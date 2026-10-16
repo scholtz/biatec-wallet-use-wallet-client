@@ -45,11 +45,7 @@ async function renderQrDataUrl(uri: string): Promise<string> {
 
 /** Why a method failed, so the dialog can show localized copy instead of the raw message. */
 export type ConnectErrorKind =
-  | 'walletClosed'
-  | 'userRejected'
-  | 'wrongNetwork'
-  | 'timedOut'
-  | 'popupBlocked'
+  'walletClosed' | 'userRejected' | 'wrongNetwork' | 'timedOut' | 'popupBlocked'
 
 export interface ConnectMethodState {
   status: 'connecting' | 'ready' | 'error' | 'popup-blocked'
