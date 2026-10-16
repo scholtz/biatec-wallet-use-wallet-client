@@ -1,5 +1,11 @@
 # Changelog
 
+## 1.0.2
+
+### Patch Changes
+
+- [#20](https://github.com/scholtz/biatec-wallet-use-wallet-client/pull/20) [`b00ea71`](https://github.com/scholtz/biatec-wallet-use-wallet-client/commit/b00ea71ff4f0f8e1a58a43de46d4498e5c20dc59) Thanks [@scholtz](https://github.com/scholtz)! - Update runtime dependencies: @walletconnect/sign-client and @walletconnect/types 2.26.0, socket.io-client 4.8.4.
+
 ## 1.0.1
 
 ### Patch Changes
