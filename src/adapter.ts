@@ -559,8 +559,7 @@ export class BiatecWalletAdapter extends BaseWallet<BiatecWalletOptions> {
     }
 
     const metadata = (walletState.activeAccount ?? walletState.accounts[0])?.metadata as
-      | Partial<BiatecAccountMetadata>
-      | undefined
+      Partial<BiatecAccountMetadata> | undefined
 
     if (metadata?.method === 'liquid') {
       if (!this.liquid) {
