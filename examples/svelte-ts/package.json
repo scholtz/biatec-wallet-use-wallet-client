@@ -9,16 +9,16 @@
     "typecheck": "svelte-check --tsconfig ./tsconfig.json"
   },
   "dependencies": {
-    "@txnlab/use-wallet": "^5.0.0",
-    "@txnlab/use-wallet-svelte": "^5.0.0",
-    "algosdk": "^3.7.0",
+    "@txnlab/use-wallet": "^5.0.1",
+    "@txnlab/use-wallet-svelte": "^5.0.1",
+    "algosdk": "^3.9.0",
     "biatec-wallet-use-wallet-client": "workspace:*"
   },
   "devDependencies": {
-    "@sveltejs/vite-plugin-svelte": "^7.3.0",
-    "svelte": "^5.57.0",
+    "@sveltejs/vite-plugin-svelte": "^7.3.1",
+    "svelte": "^5.57.2",
     "svelte-check": "^4.7.6",
     "typescript": "5.9.3",
-    "vite": "^8.2.2"
+    "vite": "^8.3.4"
   }
 }

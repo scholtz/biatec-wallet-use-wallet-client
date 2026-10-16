@@ -237,22 +237,22 @@ importers:
   examples/react-ts:
     dependencies:
       '@txnlab/use-wallet':
-        specifier: ^5.0.0
-        version: 5.0.0(algosdk@3.7.0)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)
       '@txnlab/use-wallet-react':
-        specifier: ^5.0.0
-        version: 5.0.1(algosdk@3.7.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
       algosdk:
-        specifier: ^3.7.0
-        version: 3.7.0
+        specifier: ^3.9.0
+        version: 3.9.0
       biatec-wallet-use-wallet-client:
         specifier: workspace:*
         version: link:../..
       react:
-        specifier: ^19.3.0
+        specifier: ^19.3.1
         version: 19.3.1
       react-dom:
-        specifier: ^19.3.0
+        specifier: ^19.3.1
         version: 19.3.1(react@19.3.1)
     devDependencies:
       '@types/react':
@@ -262,38 +262,38 @@ importers:
         specifier: ^19.3.0
         version: 19.3.0(@types/react@19.3.0)
       '@vitejs/plugin-react':
-        specifier: ^6.1.1
+        specifier: ^6.1.2
         version: 6.1.2(vite@8.3.4(@types/node@22.20.2)(yaml@2.9.1))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.2.2
+        specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.2)(yaml@2.9.1)
 
   examples/solid-ts:
     dependencies:
       '@txnlab/use-wallet':
-        specifier: ^5.0.0
-        version: 5.0.0(algosdk@3.7.0)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)
       '@txnlab/use-wallet-solid':
-        specifier: ^5.0.0
-        version: 5.0.1(algosdk@3.7.0)(solid-js@1.9.17)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)(solid-js@1.9.17)
       algosdk:
-        specifier: ^3.7.0
-        version: 3.7.0
+        specifier: ^3.9.0
+        version: 3.9.0
       biatec-wallet-use-wallet-client:
         specifier: workspace:*
         version: link:../..
       solid-js:
-        specifier: ^1.9.15
+        specifier: ^1.9.17
         version: 1.9.17
     devDependencies:
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.2.2
+        specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.2)(yaml@2.9.1)
       vite-plugin-solid:
         specifier: ^2.11.14
@@ -302,23 +302,23 @@ importers:
   examples/svelte-ts:
     dependencies:
       '@txnlab/use-wallet':
-        specifier: ^5.0.0
-        version: 5.0.0(algosdk@3.7.0)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)
       '@txnlab/use-wallet-svelte':
-        specifier: ^5.0.0
-        version: 5.0.1(algosdk@3.7.0)(svelte@5.57.2(@typescript-eslint/types@8.71.2))
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)(svelte@5.57.2(@typescript-eslint/types@8.71.2))
       algosdk:
-        specifier: ^3.7.0
-        version: 3.7.0
+        specifier: ^3.9.0
+        version: 3.9.0
       biatec-wallet-use-wallet-client:
         specifier: workspace:*
         version: link:../..
     devDependencies:
       '@sveltejs/vite-plugin-svelte':
-        specifier: ^7.3.0
+        specifier: ^7.3.1
         version: 7.3.1(svelte@5.57.2(@typescript-eslint/types@8.71.2))(vite@8.3.4(@types/node@22.20.2)(yaml@2.9.1))
       svelte:
-        specifier: ^5.57.0
+        specifier: ^5.57.2
         version: 5.57.2(@typescript-eslint/types@8.71.2)
       svelte-check:
         specifier: ^4.7.6
@@ -327,17 +327,17 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.2.2
+        specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.2)(yaml@2.9.1)
 
   examples/vanilla-ts:
     dependencies:
       '@txnlab/use-wallet':
-        specifier: ^5.0.0
-        version: 5.0.0(algosdk@3.7.0)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)
       algosdk:
-        specifier: ^3.7.0
-        version: 3.7.0
+        specifier: ^3.9.0
+        version: 3.9.0
       biatec-wallet-use-wallet-client:
         specifier: workspace:*
         version: link:../..
@@ -346,38 +346,38 @@ importers:
         specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^6.4.1
+        specifier: ^6.4.4
         version: 6.4.4(@types/node@22.20.2)(lightningcss@1.33.0)(yaml@2.9.1)
 
   examples/vue-ts:
     dependencies:
       '@txnlab/use-wallet':
-        specifier: ^5.0.0
-        version: 5.0.0(algosdk@3.7.0)
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)
       '@txnlab/use-wallet-vue':
-        specifier: ^5.0.0
-        version: 5.0.1(algosdk@3.7.0)(vue@3.5.44(typescript@5.9.3))
+        specifier: ^5.0.1
+        version: 5.0.1(algosdk@3.9.0)(vue@3.5.44(typescript@5.9.3))
       algosdk:
-        specifier: ^3.7.0
-        version: 3.7.0
+        specifier: ^3.9.0
+        version: 3.9.0
       biatec-wallet-use-wallet-client:
         specifier: workspace:*
         version: link:../..
       vue:
-        specifier: ^3.5.42
+        specifier: ^3.5.44
         version: 3.5.44(typescript@5.9.3)
     devDependencies:
       '@vitejs/plugin-vue':
-        specifier: ^6.0.8
+        specifier: ^6.0.10
         version: 6.0.10(vite@8.3.4(@types/node@22.20.2)(yaml@2.9.1))(vue@3.5.44(typescript@5.9.3))
       typescript:
         specifier: 5.9.3
         version: 5.9.3
       vite:
-        specifier: ^8.2.2
+        specifier: ^8.3.4
         version: 8.3.4(@types/node@22.20.2)(yaml@2.9.1)
       vue-tsc:
-        specifier: ^3.3.11
+        specifier: ^3.3.13
         version: 3.3.13(typescript@5.9.3)
 
 packages:
@@ -1400,9 +1400,6 @@ packages:
   '@tanstack/store@0.11.1':
     resolution: {integrity: sha512-mzTOBhypOuDJAy/D8n2MfUZ1HFkXnmSETviRyhqEC8LUE7/IZQExOTxMANj3KjTofYTkFNpBY67qaVrT41YccA==}
 
-  '@tanstack/store@0.9.1':
-    resolution: {integrity: sha512-+qcNkOy0N1qSGsP7omVCW0SDrXtaDcycPqBDE726yryiA5eTDFpjBReaYjghVJwNf1pcPMyzIwTGlYjCSQR0Fg==}
-
   '@tanstack/svelte-store@0.12.1':
     resolution: {integrity: sha512-ZFj8gyIWHZRYLv8RHp5jhnMhvw15g86KinotrUp9RfY7ygjkU3CcaMUytIdMJ4Xzq/9GqVlAphV9gFIGKRXWSw==}
     peerDependencies:
@@ -1445,12 +1442,6 @@ packages:
     peerDependencies:
       algosdk: ^3.0.0
       vue: ^3.0.0
-
-  '@txnlab/use-wallet@5.0.0':
-    resolution: {integrity: sha512-GHAD3Kwq7w/HbR3I/SUnzHXIW9qaBLxf7RvS52YEZfuTji5gppVarDly8TVpAzJwGisH51burywYP0qpad/nCw==}
-    engines: {node: '>=22'}
-    peerDependencies:
-      algosdk: ^3.0.0
 
   '@txnlab/use-wallet@5.0.1':
     resolution: {integrity: sha512-47SQ86peUVPzNh9k1bfoT1muBaZa4rTlT+PcNvORLKWO13YJ148n8YWaos3UatdGjZJ3T1qEjd5G2sKMKM3dlg==}
@@ -1750,10 +1741,6 @@ packages:
   algorand-msgpack@1.1.0:
     resolution: {integrity: sha512-08k7pBQnkaUB5p+jL7f1TRaUIlTSDE0cesFu1mD7llLao+1cAhtvvZmGE3OnisTd0xOn118QMw74SRqddqaYvw==}
     engines: {node: '>= 14'}
-
-  algosdk@3.7.0:
-    resolution: {integrity: sha512-6mr5w+A+A87/rAd4Y5hSmKSfvLkOKeik81w8Tte9ZxSqnwqUuWUioQsJail3ZyCbJtEctJXJTxe7Sx50/lQi3g==}
-    engines: {node: '>=18.0.0'}
 
   algosdk@3.9.0:
     resolution: {integrity: sha512-v6DoM9UNWVmoKAhF9a/jQa6TnvCB5kf+lDlURdS3Qn1gLGxmEtkLmW5aUzBzgJXp18euvm8eS/0bNYFdB9bcVQ==}
@@ -4039,8 +4026,6 @@ snapshots:
 
   '@tanstack/store@0.11.1': {}
 
-  '@tanstack/store@0.9.1': {}
-
   '@tanstack/svelte-store@0.12.1(svelte@5.57.2(@typescript-eslint/types@8.71.2))':
     dependencies:
       '@tanstack/store': 0.11.1
@@ -4052,48 +4037,36 @@ snapshots:
       vue: 3.5.44(typescript@5.9.3)
       vue-demi: 0.14.10(vue@3.5.44(typescript@5.9.3))
 
-  '@txnlab/use-wallet-react@5.0.1(algosdk@3.7.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
+  '@txnlab/use-wallet-react@5.0.1(algosdk@3.9.0)(react-dom@19.3.1(react@19.3.1))(react@19.3.1)':
     dependencies:
       '@tanstack/react-store': 0.11.1(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
-      '@txnlab/use-wallet': 5.0.1(algosdk@3.7.0)
-      algosdk: 3.7.0
+      '@txnlab/use-wallet': 5.0.1(algosdk@3.9.0)
+      algosdk: 3.9.0
       react: 19.3.1
       react-dom: 19.3.1(react@19.3.1)
 
-  '@txnlab/use-wallet-solid@5.0.1(algosdk@3.7.0)(solid-js@1.9.17)':
+  '@txnlab/use-wallet-solid@5.0.1(algosdk@3.9.0)(solid-js@1.9.17)':
     dependencies:
       '@tanstack/solid-store': 0.11.1(solid-js@1.9.17)
-      '@txnlab/use-wallet': 5.0.1(algosdk@3.7.0)
-      algosdk: 3.7.0
+      '@txnlab/use-wallet': 5.0.1(algosdk@3.9.0)
+      algosdk: 3.9.0
       solid-js: 1.9.17
 
-  '@txnlab/use-wallet-svelte@5.0.1(algosdk@3.7.0)(svelte@5.57.2(@typescript-eslint/types@8.71.2))':
+  '@txnlab/use-wallet-svelte@5.0.1(algosdk@3.9.0)(svelte@5.57.2(@typescript-eslint/types@8.71.2))':
     dependencies:
       '@tanstack/svelte-store': 0.12.1(svelte@5.57.2(@typescript-eslint/types@8.71.2))
-      '@txnlab/use-wallet': 5.0.1(algosdk@3.7.0)
-      algosdk: 3.7.0
+      '@txnlab/use-wallet': 5.0.1(algosdk@3.9.0)
+      algosdk: 3.9.0
       svelte: 5.57.2(@typescript-eslint/types@8.71.2)
 
-  '@txnlab/use-wallet-vue@5.0.1(algosdk@3.7.0)(vue@3.5.44(typescript@5.9.3))':
+  '@txnlab/use-wallet-vue@5.0.1(algosdk@3.9.0)(vue@3.5.44(typescript@5.9.3))':
     dependencies:
       '@tanstack/vue-store': 0.11.1(vue@3.5.44(typescript@5.9.3))
-      '@txnlab/use-wallet': 5.0.1(algosdk@3.7.0)
-      algosdk: 3.7.0
+      '@txnlab/use-wallet': 5.0.1(algosdk@3.9.0)
+      algosdk: 3.9.0
       vue: 3.5.44(typescript@5.9.3)
     transitivePeerDependencies:
       - '@vue/composition-api'
-
-  '@txnlab/use-wallet@5.0.0(algosdk@3.7.0)':
-    dependencies:
-      '@tanstack/store': 0.9.1
-      algosdk: 3.7.0
-      tweetnacl: 1.0.3
-
-  '@txnlab/use-wallet@5.0.1(algosdk@3.7.0)':
-    dependencies:
-      '@tanstack/store': 0.11.1
-      algosdk: 3.7.0
-      tweetnacl: 1.0.3
 
   '@txnlab/use-wallet@5.0.1(algosdk@3.9.0)':
     dependencies:
@@ -4651,17 +4624,6 @@ snapshots:
       uri-js: 4.4.1
 
   algorand-msgpack@1.1.0: {}
-
-  algosdk@3.7.0:
-    dependencies:
-      algorand-msgpack: 1.1.0
-      hi-base32: 0.5.1
-      js-sha256: 0.9.0
-      js-sha3: 0.8.0
-      js-sha512: 0.8.0
-      json-bigint: 1.0.0
-      tweetnacl: 1.0.3
-      vlq: 2.0.4
 
   algosdk@3.9.0:
     dependencies:
